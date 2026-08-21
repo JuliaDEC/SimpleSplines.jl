@@ -16,65 +16,55 @@ jobs:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    # A pre-release or nightly failure is information, not a broken build.
+    continue-on-error: ${{ matrix.experimental }}
     permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
       actions: write
       contents: read
     strategy:
       fail-fast: false
       matrix:
+        # 'min' resolves the lower bound of the julia compat entry in Project.toml, so the
+        # matrix follows the declared support window instead of having to be edited alongside
+        # it; '1' is the current stable release.
         version:
-          - '1.10'
-          - '1.12'
-          - 'nightly'
+          - 'min'
+          - '1'
         os:
           - ubuntu-latest
           - macOS-latest
           - windows-latest
         arch:
-          - x64
+          # 'default' is the runner's native architecture, which is aarch64 on macOS-latest;
+          # a hardcoded 'x64' would test Julia under Rosetta there.
+          - default
+        experimental:
+          - false
+        include:
+          - version: 'lts'
+            os: ubuntu-latest
+            arch: default
+            experimental: false
+          - version: 'pre'
+            os: ubuntu-latest
+            arch: default
+            experimental: true
+          - version: 'nightly'
+            os: ubuntu-latest
+            arch: default
+            experimental: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
       - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
-  docs:
-    name: Documentation
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write # needed to allow julia-actions/cache to proactively delete old caches that it has created
-      contents: write
-      statuses: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
-        with:
-          version: '1'
-      - uses: julia-actions/cache@v2
-      - name: Configure doc environment
-        shell: julia --project=docs --color=yes {0}
-        run: |
-          using Pkg
-          Pkg.develop(PackageSpec(path=pwd()))
-          Pkg.instantiate()
-      - uses: julia-actions/julia-buildpkg@v1
-      - uses: julia-actions/julia-docdeploy@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
-      - name: Run doctests
-        shell: julia --project=docs --color=yes {0}
-        run: |
-          using Documenter: DocMeta, doctest
-          using SimpleSplines
-          DocMeta.setdocmeta!(SimpleSplines, :DocTestSetup, :(using SimpleSplines); recursive=true)
-          doctest(SimpleSplines)

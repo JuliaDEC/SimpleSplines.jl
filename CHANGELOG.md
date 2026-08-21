@@ -104,9 +104,40 @@ CHOLMOD having no in-place `ldiv!`.
 assemblies do not map onto that package's Galerkin interface. `FFTW` and `SparseArrays` were
 added for the above, and `CompactBasisFunctions` for the shared `Basis` hierarchy.
 
+### Repository and CI
+
+The documentation build moved out of `CI.yml` into its own `Documenter.yml` workflow, so that
+a docs failure and a test failure are separate signals and the docs job is not queued behind
+the test matrix. The README gained a badge for it.
+
+The workflows were brought up to current action versions — `actions/checkout@v7`,
+`julia-actions/setup-julia@v3`, `julia-actions/cache@v3`, `codecov/codecov-action@v7` — and
+the test matrix now names Julia versions by alias rather than by number:
+
+- `min` resolves the lower bound of the `julia` compat entry, so the matrix tracks the
+  declared support window instead of having to be edited alongside it;
+- `lts` and `1` cover the long-term-support and current stable releases;
+- `pre` and `nightly` run on Linux only and are `continue-on-error`, since an upcoming-release
+  failure is information rather than a broken build.
+
+`arch` is now `default` rather than `x64`, which is what tests Julia natively on the ARM64
+macOS runners instead of under Rosetta.
+
+`AUTHORS.md` was added and `LICENSE` renamed to `LICENSE.md`, whose copyright line now names
+"The SimpleSplines Authors" and points at it.
+
+The `pre-push` hook the README asks the reader to enable now exists in `.githooks/`. It runs
+the test suite and refuses the push if it fails; `SIMPLESPLINES_SKIP_TESTS=1` overrides it.
+
 ### Fixed
 
 - `QuadratureRules` compat was `"0.1"`, which could not co-resolve with
   `CompactBasisFunctions`; it is now `"0.2"`.
 - `LinearAlgebra` compat was `"1.12.0"` alongside `julia = "1.10"`, which contradicted the
   1.10 row of the CI matrix; it is now `"1"`.
+- `docs/Project.toml` pinned `CompactBasisFunctions` to an absolute path on a developer's
+  machine through a `[sources]` entry. That path does not exist on a CI runner, so the
+  documentation build could only ever have succeeded locally; the entry is removed and the
+  dependency now resolves from the registry.
+- `CompatHelper.yml` invoked `julia` without installing it. The runner images no longer ship
+  a Julia, so the workflow failed before CompatHelper started; it now sets Julia up first.

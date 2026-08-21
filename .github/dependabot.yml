@@ -5,3 +5,8 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    # One pull request for all action bumps rather than one per action.
+    groups:
+      github-actions:
+        patterns:
+          - "*"

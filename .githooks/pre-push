@@ -1,0 +1,39 @@
+#!/bin/sh
+#
+# Run the test suite before a push, and refuse the push if it fails.
+#
+# Enable with
+#
+#     git config core.hooksPath .githooks
+#
+# and skip a single push with `SIMPLESPLINES_SKIP_TESTS=1 git push` — for a
+# documentation-only change, say, or when the failure is already known and being
+# pushed to a branch on purpose.
+
+set -eu
+
+if [ "${SIMPLESPLINES_SKIP_TESTS:-0}" != "0" ]; then
+    printf 'pre-push: SIMPLESPLINES_SKIP_TESTS is set, skipping the test suite.\n' >&2
+    exit 0
+fi
+
+if ! command -v julia >/dev/null 2>&1; then
+    printf 'pre-push: julia is not on PATH, cannot run the test suite; refusing the push.\n' >&2
+    printf '          Set SIMPLESPLINES_SKIP_TESTS=1 to push anyway.\n' >&2
+    exit 1
+fi
+
+# The hook runs with the working directory at the top level of the work tree already, but
+# `git push` from a subdirectory of a worktree is not worth relying on that for.
+root=$(git rev-parse --show-toplevel)
+
+printf 'pre-push: running the SimpleSplines test suite...\n' >&2
+
+if julia --project="$root" -e 'using Pkg; Pkg.test()'; then
+    printf 'pre-push: tests passed.\n' >&2
+    exit 0
+fi
+
+printf 'pre-push: tests FAILED; refusing the push.\n' >&2
+printf '          Set SIMPLESPLINES_SKIP_TESTS=1 to push anyway.\n' >&2
+exit 1
