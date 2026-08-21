@@ -141,3 +141,37 @@ the test suite and refuses the push if it fails; `SIMPLESPLINES_SKIP_TESTS=1` ov
   dependency now resolves from the registry.
 - `CompatHelper.yml` invoked `julia` without installing it. The runner images no longer ship
   a Julia, so the workflow failed before CompatHelper started; it now sets Julia up first.
+
+## Open Issues
+
+### `weighted_matrix` allocates a fresh matrix per call
+
+`weighted_matrix` is the one assembly that cannot be memoised — it depends on the field, so a
+downstream time integrator asks for a *different* one inside every Newton iteration of every
+step, which is exactly the call pattern under which allocation matters most. Measured at
+`N = 128`, `p = 3`, `nq = 5`:
+
+| | bytes |
+|:--|--:|
+| `f .* q.w` temporary | 5 kB |
+| `Φₐ * Diagonal(f ⊙ w)` | 47 kB |
+| `(Φₐ D) * Φᵦᵀ` sparse-sparse product | 208 kB |
+| **total per call** | **260 kB** |
+
+The `f ⊙ w` temporary is the same one `l2_projection!` no longer pays and could be removed the
+same way, with the buffer the quadrature already holds. The other 255 kB are not a temporary
+at all: they are the result, a freshly built `SparseMatrixCSC` with its `colptr`, `rowval` and
+`nzval` allocated and its structure recomputed from scratch.
+
+That structure does not depend on `f`. For a fixed `(a, b)` the sparsity pattern of
+`Φₐ diag(f ⊙ w) Φᵦᵀ` is the same for every coefficient — a basis function overlaps only the
+`2p+1` others whose supports meet its own — so the pattern could be assembled once per
+`(a, b)`, cached beside the `mixed_matrix` results, and only `nzval` refilled per
+call. That turns 260 kB into zero.
+
+What it needs is an in-place entry point, `weighted_matrix!(A, q, f, a, b)`, since the present
+signature has nowhere to write. Callers holding a matrix across steps would use it and callers
+wanting a value would keep the allocating form. Deferred rather than done because it widens
+the API, and because the sparse triple product would have to be written out by hand against
+the cached pattern instead of delegating to `SparseArrays`, which is the part that needs to be
+got right rather than merely written.
