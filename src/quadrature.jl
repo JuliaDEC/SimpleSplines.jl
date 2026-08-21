@@ -70,6 +70,13 @@ true
 support of `p+1` cells are ever nonzero and only those are computed, but keeping the array
 dense lets the contractions above run as one BLAS call, which is the faster arrangement at
 the sizes these discretisations are used at.
+
+!!! warning "One quadrature per thread"
+    A `SplineQuadrature` carries mutable state behind an otherwise read-only interface:
+    [`mixed_matrix`](@ref) memoises its results into a `Dict`, and [`l2_projection!`](@ref)
+    forms its ``f \odot w`` product in a shared buffer. Neither is synchronised, so one
+    quadrature must not be used from two threads at once. Give each thread its own, or stay
+    with the allocating [`l2_projection`](@ref), which forms its own product.
 """
 struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
     basis::BT
@@ -356,9 +363,12 @@ buffer held by the quadrature, the load vector is formed with `mul!` straight in
 the [`CirculantMass`](@ref) solve is itself allocation-free. On a non-uniform mesh the
 CHOLMOD solve still allocates a temporary, as [`mass_solve!`](@ref) notes.
 
-That shared buffer is also what makes this method non-reentrant: two threads projecting
-through the same [`SplineQuadrature`](@ref) at once would overwrite each other's `f ⊙ w`.
-Give each thread its own quadrature, or use the allocating [`l2_projection`](@ref).
+A sample whose element type is wider than the quadrature's — a complex `f` — gets its own
+product instead of being narrowed into that buffer, so this method accepts exactly what
+[`l2_projection`](@ref) accepts and merely stops being allocation-free there.
+
+The shared buffer is one of the two reasons a [`SplineQuadrature`](@ref) may not be used from
+two threads at once; see the warning there.
 """
 function l2_projection!(û::AbstractVector, q::SplineQuadrature, f::AbstractVector)
     length(û) == nbasis(q) || throw(DimensionMismatch(
@@ -366,8 +376,14 @@ function l2_projection!(û::AbstractVector, q::SplineQuadrature, f::AbstractVect
     length(f) == length(q.x) || throw(DimensionMismatch(
         "the function was sampled at $(length(f)) points but the quadrature has " *
         "$(length(q.x))"))
-    q.scratch .= q.w .* f
-    mul!(û, basis_values(q, 0), q.scratch)
+    # The buffer has the quadrature's element type, so it can only take the product when the
+    # product lands in that type; a complex or extended-precision sample gets its own array
+    # rather than an `InexactError` or a silent narrowing. The test is on types alone, hence
+    # resolved when the method is compiled, so the ordinary path still allocates nothing.
+    S  = promote_type(eltype(q.w), eltype(f))
+    fw = S === eltype(q.scratch) ? q.scratch : similar(f, S)
+    fw .= q.w .* f
+    mul!(û, basis_values(q, 0), fw)
     mass_solve!(û, q.mass, û)
     return û
 end

@@ -28,13 +28,8 @@ jobs:
           version: '1'
       - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
-      # docs/Project.toml carries a [sources] entry for the package itself, so instantiating
-      # the docs environment is all that is needed to resolve it against the checkout.
-      - name: Instantiate the docs environment
-        shell: julia --project=docs --color=yes {0}
-        run: |
-          using Pkg
-          Pkg.instantiate()
+      # julia-docdeploy resolves the docs environment against the checkout and instantiates
+      # it itself, so there is no separate step for that here.
       - uses: julia-actions/julia-docdeploy@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

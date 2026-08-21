@@ -12,6 +12,24 @@
 
 set -eu
 
+# git feeds the hook one `<local ref> <local oid> <remote ref> <remote oid>` line per ref
+# being pushed, and an all-zero local oid means that ref is being deleted. Read them:
+# a push that only deletes has nothing to test, and a hook that exits without draining
+# leaves git writing into a closed pipe.
+refs=0
+content=0
+while read -r _local_ref local_oid _remote_ref _remote_oid; do
+    refs=$((refs + 1))
+    case "$local_oid" in
+        *[!0]*) content=1 ;;
+    esac
+done
+
+if [ "$refs" -gt 0 ] && [ "$content" -eq 0 ]; then
+    printf 'pre-push: nothing but ref deletions, skipping the test suite.\n' >&2
+    exit 0
+fi
+
 if [ "${SIMPLESPLINES_SKIP_TESTS:-0}" != "0" ]; then
     printf 'pre-push: SIMPLESPLINES_SKIP_TESTS is set, skipping the test suite.\n' >&2
     exit 0
@@ -23,8 +41,8 @@ if ! command -v julia >/dev/null 2>&1; then
     exit 1
 fi
 
-# The hook runs with the working directory at the top level of the work tree already, but
-# `git push` from a subdirectory of a worktree is not worth relying on that for.
+# git runs its hooks from the top level of the work tree, but asking rather than assuming
+# also gives the right answer in a linked worktree.
 root=$(git rev-parse --show-toplevel)
 
 printf 'pre-push: running the SimpleSplines test suite...\n' >&2

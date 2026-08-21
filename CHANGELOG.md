@@ -94,9 +94,14 @@ The paths a time integrator actually runs per step allocate nothing. Evaluation 
 allocation-free at any degree and derivative order on any mesh; a `CirculantMass` solve is
 allocation-free; and `l2_projection!` is now allocation-free end to end on a uniform mesh,
 the `f ⊙ w` product going into a buffer held by the quadrature and the load vector being
-formed with `mul!` straight into the output. That buffer makes `l2_projection!`
-non-reentrant, which its docstring says. On a non-uniform mesh a CHOLMOD temporary remains,
-CHOLMOD having no in-place `ldiv!`.
+formed with `mul!` straight into the output. The buffer is taken only when the product lands
+in the quadrature's element type, so a wider sample — a complex `f` — is still projected,
+through a product of its own, rather than narrowed into it. On a non-uniform mesh a CHOLMOD
+temporary remains, CHOLMOD having no in-place `ldiv!`.
+
+That buffer is mutable state on a struct that reads as immutable, as the memoising `cache`
+behind `mixed_matrix` already was, so the `SplineQuadrature` docstring now warns that one
+quadrature must not be shared between threads.
 
 ### Dependencies
 

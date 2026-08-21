@@ -13,6 +13,7 @@ Together, these two groups form "The SimpleSplines Authors" as mentioned in the
 
 ## Contributors
 
-The following people contributed to SimpleSplines and are listed in alphabetical order:
+Everyone who has contributed to SimpleSplines, the principal developers above included, in
+alphabetical order:
 
 * Michael Kraus

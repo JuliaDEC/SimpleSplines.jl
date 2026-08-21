@@ -171,6 +171,26 @@ using Test
         l2_projection!(ŵ, q, fq)
         @test (@allocated l2_projection!(ŵ, q, fq)) == 0
         @test ŵ ≈ û
+
+        # The in-place and allocating methods are separate implementations -- the buffer is
+        # the whole point of the split -- so they are checked against each other on every
+        # mesh family, and not only on the uniform mesh the allocation test above needs.
+        for (nm, mk) in MESHES, p in 1:4
+            qm = SplineQuadrature(PeriodicBSplineBasis(mk(16), p))
+            fm = sin.(quadrature_nodes(qm))
+            ûm = Vector{Float64}(undef, nbasis(basis(qm)))
+            @test l2_projection!(ûm, qm, fm) ≈ l2_projection(qm, fm)
+        end
+
+        # A sample wider than the quadrature's element type gets its own f ⊙ w product
+        # instead of being narrowed into the shared buffer, which would be an InexactError
+        # here and a silent loss of precision for a BigFloat. Graded rather than uniform:
+        # the rfft plan of a CirculantMass takes a real argument only.
+        qc = SplineQuadrature(PeriodicBSplineBasis(GradedMesh(16, 2π), 3))
+        fc = cis.(quadrature_nodes(qc))
+        ûc = Vector{ComplexF64}(undef, nbasis(basis(qc)))
+        @test l2_projection!(ûc, qc, fc) ≈ l2_projection(qc, fc)
+        @test eltype(l2_projection(qc, fc)) == ComplexF64
     end
 
     @testset "$(rpad("L2 projection converges at order p+1",76))" begin
