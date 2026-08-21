@@ -1,3 +1,8 @@
 [deps]
+CompactBasisFunctions = "a09551c4-f815-4143-809e-dd1986753ba7"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 SimpleSplines = "ac480f6c-9a94-4d53-a283-9db69f109154"
+
+[sources]
+CompactBasisFunctions = {path = "/Users/mkraus/Datashare/Julia/CompactBasisFunctions"}
+SimpleSplines = {path = ".."}

@@ -1,6 +1,13 @@
 using SimpleSplines
+using Random
 using Test
 
-@testset "SimpleSplines.jl" begin
-    # Write your tests here.
-end
+# The mesh families and the projection tests draw pseudorandom data. The seed is fixed so
+# that a failure is reproducible: a spline assembly that is wrong only for some meshes is
+# exactly the kind of fault a fresh stream each run would turn into an intermittent one.
+Random.seed!(0x2f7a91c4)
+
+include("knots_tests.jl")
+include("bspline_tests.jl")
+include("mass_tests.jl")
+include("quadrature_tests.jl")
