@@ -78,6 +78,8 @@ struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
     w::Vector{T}
     Φ::Vector{SparseMatrixCSC{T, Int}}
     mass::MO
+    integrals::Vector{T}
+    scratch::Vector{T}
     cache::Dict{Tuple{Int,Int}, SparseMatrixCSC{T, Int}}
 
     function SplineQuadrature(basis::BT;
@@ -149,7 +151,13 @@ struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
             rethrow()
         end
 
-        new{T, BT, typeof(mass)}(basis, Int(nq), x, w, Φ, mass,
+        # ∫ φ_i dx is a constant of the discretisation like the mass matrix, so it is
+        # assembled here rather than recomputed on every call. `scratch` is the f ⊙ w
+        # buffer that keeps `l2_projection!` from allocating one per call.
+        integrals = Φ[1] * w
+        scratch   = Vector{T}(undef, n * nq)
+
+        new{T, BT, typeof(mass)}(basis, Int(nq), x, w, Φ, mass, integrals, scratch,
                                  Dict{Tuple{Int,Int}, SparseMatrixCSC{T, Int}}())
     end
 end
@@ -306,8 +314,11 @@ This is the gradient of the total mass ``C_0 = \int_\Omega u \, dx`` with respec
 degrees of freedom, and it equals ``\mathbb{M} \mathbf{1}`` because the basis is a partition of
 unity. It spans the kernel of the first discrete bracket, which is why the mass is a
 Casimir there.
+
+Assembled once when the [`SplineQuadrature`](@ref) is built and returned by reference, as
+[`mass_matrix`](@ref) is — do not mutate the result.
 """
-basis_integrals(q::SplineQuadrature) = basis_values(q, 0) * q.w
+basis_integrals(q::SplineQuadrature) = q.integrals
 
 @doc raw"""
     l2_projection(q::SplineQuadrature, f)
@@ -339,11 +350,24 @@ end
     l2_projection!(û, q::SplineQuadrature, f)
 
 In-place [`l2_projection`](@ref), writing the coefficients into `û`.
+
+On a [`UniformMesh`](@ref) this allocates nothing: the ``f \odot w`` product goes into a
+buffer held by the quadrature, the load vector is formed with `mul!` straight into `û`, and
+the [`CirculantMass`](@ref) solve is itself allocation-free. On a non-uniform mesh the
+CHOLMOD solve still allocates a temporary, as [`mass_solve!`](@ref) notes.
+
+That shared buffer is also what makes this method non-reentrant: two threads projecting
+through the same [`SplineQuadrature`](@ref) at once would overwrite each other's `f ⊙ w`.
+Give each thread its own quadrature, or use the allocating [`l2_projection`](@ref).
 """
 function l2_projection!(û::AbstractVector, q::SplineQuadrature, f::AbstractVector)
     length(û) == nbasis(q) || throw(DimensionMismatch(
         "the coefficient vector has $(length(û)) entries but the basis has $(nbasis(q))"))
-    û .= basis_values(q, 0) * (q.w .* f)
+    length(f) == length(q.x) || throw(DimensionMismatch(
+        "the function was sampled at $(length(f)) points but the quadrature has " *
+        "$(length(q.x))"))
+    q.scratch .= q.w .* f
+    mul!(û, basis_values(q, 0), q.scratch)
     mass_solve!(û, q.mass, û)
     return û
 end

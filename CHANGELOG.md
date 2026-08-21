@@ -86,7 +86,17 @@ was the difference between 6.0 ms and 0.4 ms for assembling one Hessian.
 
 The constant assemblies — `mass_matrix`, `stiffness_matrix`, `derivative_matrix` and any
 `mixed_matrix` — are memoised on first use. They do not depend on the field, but a downstream
-time integrator asks for them inside every Newton iteration of every step.
+time integrator asks for them inside every Newton iteration of every step. `basis_integrals`
+is one of these constants too, and is now assembled with the quadrature and returned by
+reference rather than recomputed per call.
+
+The paths a time integrator actually runs per step allocate nothing. Evaluation is
+allocation-free at any degree and derivative order on any mesh; a `CirculantMass` solve is
+allocation-free; and `l2_projection!` is now allocation-free end to end on a uniform mesh,
+the `f ⊙ w` product going into a buffer held by the quadrature and the load vector being
+formed with `mul!` straight into the output. That buffer makes `l2_projection!`
+non-reentrant, which its docstring says. On a non-uniform mesh a CHOLMOD temporary remains,
+CHOLMOD having no in-place `ldiv!`.
 
 ### Dependencies
 

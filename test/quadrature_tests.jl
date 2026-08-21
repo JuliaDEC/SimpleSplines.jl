@@ -59,6 +59,12 @@ using Test
             @test mass_matrix(q) * ones(16) ≈ Iv
             @test all(>(0), Iv)
         end
+        # a constant of the discretisation, assembled once and returned by reference rather
+        # than recomputed on every call
+        q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(16), 3))
+        @test basis_integrals(q) === basis_integrals(q)
+        basis_integrals(q)
+        @test (@allocated basis_integrals(q)) == 0
     end
 
     @testset "$(rpad("S is already antisymmetric, given nq >= p",76))" begin
@@ -156,6 +162,15 @@ using Test
         @test l2_projection!(ŵ, q, sin) ≈ û
         @test_throws DimensionMismatch l2_projection(q, [1.0, 2.0])
         @test_throws DimensionMismatch l2_projection!(zeros(3), q, sin)
+        @test_throws DimensionMismatch l2_projection!(similar(û), q, [1.0, 2.0])
+
+        # on a uniform mesh the whole projection is allocation-free: the f ⊙ w buffer lives
+        # in the quadrature, the load vector is formed with mul! straight into û, and the
+        # CirculantMass solve allocates nothing
+        fq = sin.(quadrature_nodes(q))
+        l2_projection!(ŵ, q, fq)
+        @test (@allocated l2_projection!(ŵ, q, fq)) == 0
+        @test ŵ ≈ û
     end
 
     @testset "$(rpad("L2 projection converges at order p+1",76))" begin
