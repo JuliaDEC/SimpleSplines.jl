@@ -50,8 +50,3 @@ git push --no-verify
 The hooks are generated from one shared copy and are byte-identical across the related
 repositories, so edit them there rather than here — a local edit is silently undone by the next
 install.
-
-## License
-
-SimpleSplines is licensed under the [MIT License](LICENSE.md). See [AUTHORS.md](AUTHORS.md)
-for the list of authors the copyright refers to.
