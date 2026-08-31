@@ -63,18 +63,23 @@ The largest cell width, the ``h`` that convergence rates are measured against.
 meshwidth(m::Mesh) = maximum(diff(cellbounds(m)))
 
 Base.hash(m::Mesh, h::UInt) = hash(breakpoints(m), hash(domainlength(m), h))
-Base.:(==)(m1::Mesh, m2::Mesh) =
+function Base.:(==)(m1::Mesh, m2::Mesh)
     (domainlength(m1) == domainlength(m2) && breakpoints(m1) == breakpoints(m2))
-Base.isequal(m1::Mesh{T1}, m2::Mesh{T2}) where {T1,T2} = (T1 == T2 && m1 == m2)
-Base.isapprox(m1::Mesh, m2::Mesh; kwargs...) =
+end
+Base.isequal(m1::Mesh{T1}, m2::Mesh{T2}) where {T1, T2} = (T1 == T2 && m1 == m2)
+function Base.isapprox(m1::Mesh, m2::Mesh; kwargs...)
     (isapprox(domainlength(m1), domainlength(m2); kwargs...) &&
      isapprox(breakpoints(m1), breakpoints(m2); kwargs...))
+end
 
-_check_ncells(n::Integer) = n ≥ 1 || throw(ArgumentError(
-    "a mesh needs at least one cell, got n = $(n)"))
-_check_length(L) = (L > 0 && isfinite(L)) || throw(ArgumentError(
-    "the domain length must be positive and finite, got L = $(L)"))
-
+function _check_ncells(n::Integer)
+    n ≥ 1 || throw(ArgumentError(
+        "a mesh needs at least one cell, got n = $(n)"))
+end
+function _check_length(L)
+    (L > 0 && isfinite(L)) || throw(ArgumentError(
+        "the domain length must be positive and finite, got L = $(L)"))
+end
 
 @doc raw"""
     UniformMesh(n, L)
@@ -110,11 +115,9 @@ end
 UniformMesh(n::Integer, L::T) where {T <: Number} = UniformMesh{T}(n, L)
 UniformMesh(n::Integer) = UniformMesh(n, 2convert(Float64, π))
 
-breakpoints(m::UniformMesh{T}) where {T} =
-    T[m.L * (i - 1) / m.n for i in 1:m.n]
+breakpoints(m::UniformMesh{T}) where {T} = T[m.L * (i - 1) / m.n for i in 1:m.n]
 
 meshwidth(m::UniformMesh) = m.L / m.n
-
 
 @doc raw"""
     GradedMesh(n, L; amplitude = 0.12)
@@ -164,7 +167,6 @@ function breakpoints(m::GradedMesh{T}) where {T}
     [m.L * (s + a * sinpi(2s) / (2convert(T, π))) for s in (T(i - 1) / m.n for i in 1:m.n)]
 end
 
-
 @doc raw"""
     RandomMesh(n, L; seed = 1, spread = 0.6)
     RandomMesh{T}(n, L; seed = 1, spread = 0.6)
@@ -205,11 +207,10 @@ function breakpoints(m::RandomMesh{T}) where {T}
     y = similar(w)
     y[1] = zero(T)
     for i in 2:m.n
-        y[i] = y[i-1] + w[i-1]
+        y[i] = y[i - 1] + w[i - 1]
     end
     return y
 end
-
 
 @doc raw"""
     breakpoints(m::Mesh)

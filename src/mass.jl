@@ -85,7 +85,8 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
     buf::Vector{Complex{T}}
     n::Int
 
-    function CirculantMass(M::MT, n::Integer; atol = 1e-10) where {T, MT <: AbstractMatrix{T}}
+    function CirculantMass(M::MT, n::Integer; atol = 1e-10) where {
+            T, MT <: AbstractMatrix{T}}
         size(M, 1) == n || throw(DimensionMismatch(
             "the mass matrix is $(size(M, 1))×$(size(M, 2)) but n = $(n)"))
         c = Vector{T}(M[:, 1])
@@ -94,6 +95,7 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
         # produce plausible numbers through the transform, and the failure would show up
         # much later as a wrong conservation law.
         for j in 2:n, i in 1:n
+
             abs(M[i, j] - c[mod1(i - j + 1, n)]) ≤ atol * max(one(T), maximum(abs, c)) ||
                 throw(ArgumentError(
                     "the mass matrix is not circulant to within $(atol); a CirculantMass " *
@@ -110,10 +112,10 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
         # which OVERWRITES the array being planned for. That destroys `c` before the line
         # below reads it, and the symptom is a mass matrix that appears singular at some
         # sizes and not others.
-        buf   = Vector{Complex{T}}(undef, n ÷ 2 + 1)
-        plan  = plan_rfft(c; flags = FFTW.ESTIMATE | FFTW.UNALIGNED)
+        buf = Vector{Complex{T}}(undef, n ÷ 2 + 1)
+        plan = plan_rfft(c; flags = FFTW.ESTIMATE | FFTW.UNALIGNED)
         iplan = plan_irfft(buf, n; flags = FFTW.ESTIMATE | FFTW.UNALIGNED)
-        ĉ     = plan * c
+        ĉ = plan * c
 
         all(x -> abs(x) > eps(T), ĉ) || throw(ArgumentError(
             "the circulant mass matrix has a zero eigenvalue and is not invertible"))
@@ -159,12 +161,14 @@ function mass_solve!(y::AbstractVector, op::CirculantMass, x::AbstractVector)
     return y
 end
 
-LinearAlgebra.ldiv!(y::AbstractVector, op::MassOperator, x::AbstractVector) =
+function LinearAlgebra.ldiv!(y::AbstractVector, op::MassOperator, x::AbstractVector)
     mass_solve!(y, op, x)
+end
 LinearAlgebra.ldiv!(op::MassOperator, x::AbstractVector) = mass_solve!(x, op, x)
 
-Base.:\(op::MassOperator, x::AbstractVector) =
+function Base.:\(op::MassOperator, x::AbstractVector)
     mass_solve!(similar(x, promote_type(eltype(op), eltype(x))), op, x)
+end
 
 function Base.:\(op::MassOperator, X::AbstractMatrix)
     Y = similar(X, promote_type(eltype(op), eltype(X)))

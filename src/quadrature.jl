@@ -26,7 +26,6 @@ julia> quadrature_order.(1:4)
 """
 quadrature_order(p::Integer) = cld(3p, 2)
 
-
 @doc raw"""
     SplineQuadrature(basis; nq = quadrature_order(degree(basis)), dmax = 3)
 
@@ -87,11 +86,11 @@ struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
     mass::MO
     integrals::Vector{T}
     scratch::Vector{T}
-    cache::Dict{Tuple{Int,Int}, SparseMatrixCSC{T, Int}}
+    cache::Dict{Tuple{Int, Int}, SparseMatrixCSC{T, Int}}
 
     function SplineQuadrature(basis::BT;
-                              nq::Integer = quadrature_order(degree(basis)),
-                              dmax::Integer = 3) where {T, BT <: PeriodicBSplineBasis{T}}
+            nq::Integer = quadrature_order(degree(basis)),
+            dmax::Integer = 3) where {T, BT <: PeriodicBSplineBasis{T}}
         nq ≥ 1 || throw(ArgumentError(
             "at least one quadrature point per cell is needed, got nq = $(nq)"))
         dmax ≥ 0 || throw(ArgumentError(
@@ -108,10 +107,10 @@ struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
         x = Vector{T}(undef, n * nq)
         w = Vector{T}(undef, n * nq)
         for k in 1:n
-            a, h = bounds[k], bounds[k+1] - bounds[k]
+            a, h = bounds[k], bounds[k + 1] - bounds[k]
             for r in 1:nq
-                x[(k-1)*nq + r] = a + h * ξ[r]
-                w[(k-1)*nq + r] = h * ω[r]
+                x[(k - 1) * nq + r] = a + h * ξ[r]
+                w[(k - 1) * nq + r] = h * ω[r]
             end
         end
 
@@ -126,7 +125,8 @@ struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
         Vs = [Vector{T}(undef, nnzΦ) for _ in 0:dmax]
 
         t = 0
-        for k in 1:n, j in (k-p):k
+        for k in 1:n, j in (k - p):k
+
             i = mod1(j, N)
             for r in 1:nq
                 q = (k-1)*nq + r
@@ -134,12 +134,12 @@ struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
                 Is[t] = i
                 Js[t] = q
                 for d in 0:dmax
-                    Vs[d+1][t] = evaluate(basis, i, x[q], d)
+                    Vs[d + 1][t] = evaluate(basis, i, x[q], d)
                 end
             end
         end
 
-        Φ = [sparse(Is, Js, Vs[d+1], N, n * nq) for d in 0:dmax]
+        Φ = [sparse(Is, Js, Vs[d + 1], N, n * nq) for d in 0:dmax]
 
         M = Φ[1] * Diagonal(w) * Φ[1]'
         M = (M + M') / 2                    # symmetric by construction; enforce it exactly
@@ -162,10 +162,10 @@ struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
         # assembled here rather than recomputed on every call. `scratch` is the f ⊙ w
         # buffer that keeps `l2_projection!` from allocating one per call.
         integrals = Φ[1] * w
-        scratch   = Vector{T}(undef, n * nq)
+        scratch = Vector{T}(undef, n * nq)
 
         new{T, BT, typeof(mass)}(basis, Int(nq), x, w, Φ, mass, integrals, scratch,
-                                 Dict{Tuple{Int,Int}, SparseMatrixCSC{T, Int}}())
+            Dict{Tuple{Int, Int}, SparseMatrixCSC{T, Int}}())
     end
 end
 
@@ -194,7 +194,7 @@ function basis_values(q::SplineQuadrature, d::Integer = 0)
     0 ≤ d ≤ length(q.Φ) - 1 || throw(ArgumentError(
         "derivatives up to order $(length(q.Φ) - 1) were tabulated, but order $(d) was " *
         "requested; rebuild the quadrature with dmax = $(d)"))
-    q.Φ[d+1]
+    q.Φ[d + 1]
 end
 
 """
@@ -302,8 +302,7 @@ julia> size(A)
 (16, 16)
 ```
 """
-weighted_matrix(q::SplineQuadrature, f, a::Integer, b::Integer) =
-    weighted_matrix(q, f.(q.x), a, b)
+weighted_matrix(q::SplineQuadrature, f, a::Integer, b::Integer) = weighted_matrix(q, f.(q.x), a, b)
 
 function weighted_matrix(q::SplineQuadrature, f::AbstractVector, a::Integer, b::Integer)
     length(f) == length(q.x) || throw(DimensionMismatch(
@@ -380,7 +379,7 @@ function l2_projection!(û::AbstractVector, q::SplineQuadrature, f::AbstractVect
     # product lands in that type; a complex or extended-precision sample gets its own array
     # rather than an `InexactError` or a silent narrowing. The test is on types alone, hence
     # resolved when the method is compiled, so the ordinary path still allocates nothing.
-    S  = promote_type(eltype(q.w), eltype(f))
+    S = promote_type(eltype(q.w), eltype(f))
     fw = S === eltype(q.scratch) ? q.scratch : similar(f, S)
     fw .= q.w .* f
     mul!(û, basis_values(q, 0), fw)

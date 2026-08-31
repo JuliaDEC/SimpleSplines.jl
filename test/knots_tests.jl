@@ -2,7 +2,6 @@ using SimpleSplines
 using Test
 
 @testset "$(rpad("Mesh Tests",80))" begin
-
     L = 2π
 
     @testset "$(rpad("uniform",76))" begin
@@ -44,8 +43,10 @@ using Test
         @test last(y) < L
         @test sum(diff(cellbounds(m))) ≈ L
         # seeded, hence reproducible
-        @test breakpoints(RandomMesh(16, L; seed = 7)) == breakpoints(RandomMesh(16, L; seed = 7))
-        @test breakpoints(RandomMesh(16, L; seed = 7)) != breakpoints(RandomMesh(16, L; seed = 8))
+        @test breakpoints(RandomMesh(16, L; seed = 7)) ==
+              breakpoints(RandomMesh(16, L; seed = 7))
+        @test breakpoints(RandomMesh(16, L; seed = 7)) !=
+              breakpoints(RandomMesh(16, L; seed = 8))
         @test_throws ArgumentError RandomMesh(8, L; spread = -1)
     end
 
@@ -63,5 +64,4 @@ using Test
         @test UniformMesh(8, L) != UniformMesh(9, L)
         @test UniformMesh(8, L) ≈ UniformMesh(8, L)
     end
-
 end

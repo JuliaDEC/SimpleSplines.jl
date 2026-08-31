@@ -4,23 +4,27 @@ using SparseArrays
 using Test
 
 @testset "$(rpad("Mass Operator Tests",80))" begin
-
     @testset "$(rpad("the mesh decides the representation",76))" begin
         # a uniform mesh makes the basis functions translates of one cardinal spline, so M
         # is circulant; a graded or random mesh does not
         for p in 1:4
-            @test mass_operator(SplineQuadrature(PeriodicBSplineBasis(UniformMesh(16, 2π), p))) isa CirculantMass
-            @test mass_operator(SplineQuadrature(PeriodicBSplineBasis(GradedMesh(16, 2π), p))) isa FactorizedMass
-            @test mass_operator(SplineQuadrature(PeriodicBSplineBasis(RandomMesh(16, 2π), p))) isa FactorizedMass
+            @test mass_operator(SplineQuadrature(PeriodicBSplineBasis(UniformMesh(16, 2π), p))) isa
+                  CirculantMass
+            @test mass_operator(SplineQuadrature(PeriodicBSplineBasis(GradedMesh(16, 2π), p))) isa
+                  FactorizedMass
+            @test mass_operator(SplineQuadrature(PeriodicBSplineBasis(RandomMesh(16, 2π), p))) isa
+                  FactorizedMass
         end
     end
 
     @testset "$(rpad("the mass matrix really is circulant on a uniform mesh",76))" begin
         for p in 1:4, n in (12, 16, 24)
+
             q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(n, 2π), p))
             M = Matrix(mass_matrix(q))
             c = M[:, 1]
-            @test maximum(abs, [M[i, j] - c[mod1(i - j + 1, n)] for i in 1:n, j in 1:n]) < 1e-12
+            @test maximum(abs, [M[i, j] - c[mod1(i - j + 1, n)] for i in 1:n, j in 1:n]) <
+                  1e-12
         end
     end
 
@@ -36,6 +40,7 @@ using Test
 
     @testset "$(rpad("the FFT solve agrees with the factorised one",76))" begin
         for p in 1:4, n in (12, 15, 16, 32)
+
             q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(n, 2π), p))
             M = mass_matrix(q)
             circ = mass_operator(q)
@@ -99,5 +104,4 @@ using Test
         @test stiffness_matrix(q) === A
         @test derivative_matrix(q) === mixed_matrix(q, 0, 1)
     end
-
 end

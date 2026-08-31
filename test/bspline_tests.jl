@@ -4,11 +4,10 @@ using Random
 using Test
 
 const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
-                (:graded,  n -> GradedMesh(n, 2π)),
-                (:random,  n -> RandomMesh(n, 2π)))
+    (:graded, n -> GradedMesh(n, 2π)),
+    (:random, n -> RandomMesh(n, 2π)))
 
 @testset "$(rpad("Periodic B-Spline Basis Tests",80))" begin
-
     @testset "$(rpad("construction and accessors",76))" begin
         b = PeriodicBSplineBasis(UniformMesh(16, 2π), 3)
         @test nbasis(b) == 16                    # N = n, not n + p
@@ -28,6 +27,7 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
 
     @testset "$(rpad("dimension is n, not n + p",76))" begin
         for p in 0:4, n in (8, 13, 16)
+
             @test nbasis(PeriodicBSplineBasis(UniformMesh(n, 2π), p)) == n
         end
     end
@@ -35,6 +35,7 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
     @testset "$(rpad("partition of unity",76))" begin
         xs = collect(range(0, 2π, length = 97)[1:96])
         for p in 0:4, (nm, mk) in MESHES
+
             b = PeriodicBSplineBasis(mk(16), p)
             @test maximum(abs, [sum(b[x, j] for j in eachindex(b)) - 1 for x in xs]) < 1e-13
         end
@@ -43,6 +44,7 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
     @testset "$(rpad("non-negativity",76))" begin
         xs = collect(range(0, 2π, length = 97)[1:96])
         for p in 0:4, (nm, mk) in MESHES
+
             b = PeriodicBSplineBasis(mk(16), p)
             @test all(≥(-1e-14), b[xs, :])
         end
@@ -53,7 +55,7 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
             b = PeriodicBSplineBasis(UniformMesh(12, 2π), p)
             bnds = cellbounds(b)
             live = count(1:12) do k
-                xs = range(bnds[k], bnds[k+1], length = 7)[2:6]
+                xs = range(bnds[k], bnds[k + 1], length = 7)[2:6]
                 maximum(abs, [evaluate(b, 1, x) for x in xs]) > 1e-13
             end
             @test live == p + 1
@@ -64,6 +66,7 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
         # the basis is defined on the torus: evaluation is invariant under x -> x + L, and
         # accepts arguments outside [0,L) by reducing them
         for p in 1:4, (nm, mk) in MESHES
+
             b = PeriodicBSplineBasis(mk(16), p)
             L = domainlength(b)
             for x in range(0.1, L - 0.1, length = 11), j in (1, 5, 16), d in 0:2
@@ -79,7 +82,8 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
             n = 16
             b = PeriodicBSplineBasis(UniformMesh(n, 2π), p)
             h = 2π / n
-            for x in range(0, 2π, length = 23), j in 1:n-1
+            for x in range(0, 2π, length = 23), j in 1:(n - 1)
+
                 @test evaluate(b, j + 1, x + h) ≈ evaluate(b, j, x) atol = 1e-13
             end
         end
@@ -90,7 +94,7 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
             b = PeriodicBSplineBasis(UniformMesh(12, 2π), p)
             L = domainlength(b)
             ε = 1e-9
-            for d in 0:p-1
+            for d in 0:(p - 1)
                 @test abs(evaluate(b, 1, ε, d) - evaluate(b, 1, L - ε, d)) < 1e-6
             end
             # the p-th derivative jumps: the basis is not smoother than C^{p-1}
@@ -100,9 +104,10 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
 
     @testset "$(rpad("derivative recursion against finite differences",76))" begin
         for p in 2:4, (nm, mk) in MESHES
+
             b = PeriodicBSplineBasis(mk(16), p)
             h = 1e-5
-            for x in range(0.37, 5.9, length = 13), j in (1, 4, 11), d in 0:p-2
+            for x in range(0.37, 5.9, length = 13), j in (1, 4, 11), d in 0:(p - 2)
                 fd = (evaluate(b, j, x + h, d) - evaluate(b, j, x - h, d)) / 2h
                 @test evaluate(b, j, x, d + 1) ≈ fd atol = 1e-6
             end
@@ -134,7 +139,8 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
         û = randn(nbasis(b))
         for x in range(0.1, 6.0, length = 11)
             @test evaluate(b, û, x) ≈ sum(û[j] * b[x, j] for j in eachindex(b))
-            @test evaluate(b, û, x, 1) ≈ sum(û[j] * evaluate(b, j, x, 1) for j in eachindex(b))
+            @test evaluate(b, û, x, 1) ≈
+                  sum(û[j] * evaluate(b, j, x, 1) for j in eachindex(b))
         end
         @test evaluate(b, û, [0.3, 1.1]) ≈ [evaluate(b, û, 0.3), evaluate(b, û, 1.1)]
         @test_throws DimensionMismatch evaluate(b, randn(3), 0.5)
@@ -158,9 +164,12 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
         end
         # for p = 1 the Greville point of phi_j is where the hat function peaks, i.e. the
         # breakpoint one cell over, so the node set is the breakpoint set cyclically shifted
-        @test sort(nodes(PeriodicBSplineBasis(UniformMesh(8, 8.0), 1))) ≈ breakpoints(UniformMesh(8, 8.0))
-        @test nodes(PeriodicBSplineBasis(UniformMesh(8, 8.0), 1)) ≈ circshift(breakpoints(UniformMesh(8, 8.0)), -1)
-        @test grid(PeriodicBSplineBasis(UniformMesh(8, 8.0), 3)) == nodes(PeriodicBSplineBasis(UniformMesh(8, 8.0), 3))
+        @test sort(nodes(PeriodicBSplineBasis(UniformMesh(8, 8.0), 1))) ≈
+              breakpoints(UniformMesh(8, 8.0))
+        @test nodes(PeriodicBSplineBasis(UniformMesh(8, 8.0), 1)) ≈
+              circshift(breakpoints(UniformMesh(8, 8.0)), -1)
+        @test grid(PeriodicBSplineBasis(UniformMesh(8, 8.0), 3)) ==
+              nodes(PeriodicBSplineBasis(UniformMesh(8, 8.0), 3))
     end
 
     @testset "$(rpad("equality and hashing",76))" begin
@@ -174,5 +183,4 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
         @test b1 != b3
         @test !isapprox(b1, b3)
     end
-
 end

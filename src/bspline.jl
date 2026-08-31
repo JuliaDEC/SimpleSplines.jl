@@ -34,26 +34,25 @@ function _bspline(kv::AbstractVector{T}, k::Int, p::Int, x::S, d::Int) where {T,
 
     if d > 0
         p == 0 && return zero(R)
-        a = kv[k+p]   - kv[k]
-        b = kv[k+p+1] - kv[k+1]
+        a = kv[k + p] - kv[k]
+        b = kv[k + p + 1] - kv[k + 1]
         out = zero(R)
-        a > 0 && (out += _bspline(kv, k,     p - 1, x, d - 1) / a)
+        a > 0 && (out += _bspline(kv, k, p - 1, x, d - 1) / a)
         b > 0 && (out -= _bspline(kv, k + 1, p - 1, x, d - 1) / b)
         return p * out
     end
 
     if p == 0
-        return (kv[k] ≤ x < kv[k+1]) ? one(R) : zero(R)
+        return (kv[k] ≤ x < kv[k + 1]) ? one(R) : zero(R)
     end
 
-    a = kv[k+p]   - kv[k]
-    b = kv[k+p+1] - kv[k+1]
+    a = kv[k + p] - kv[k]
+    b = kv[k + p + 1] - kv[k + 1]
     out = zero(R)
-    a > 0 && (out += (x - kv[k])     / a * _bspline(kv, k,     p - 1, x, 0))
-    b > 0 && (out += (kv[k+p+1] - x) / b * _bspline(kv, k + 1, p - 1, x, 0))
+    a > 0 && (out += (x - kv[k]) / a * _bspline(kv, k, p - 1, x, 0))
+    b > 0 && (out += (kv[k + p + 1] - x) / b * _bspline(kv, k + 1, p - 1, x, 0))
     return out
 end
-
 
 @doc raw"""
     PeriodicBSplineBasis(mesh, p)
@@ -145,8 +144,9 @@ struct PeriodicBSplineBasis{T, MT <: Mesh{T}} <: Basis{T}
 end
 
 PeriodicBSplineBasis(mesh::Mesh{T}, p::Integer) where {T} = PeriodicBSplineBasis{T}(mesh, p)
-PeriodicBSplineBasis(n::Integer, p::Integer; L = 2π) =
+function PeriodicBSplineBasis(n::Integer, p::Integer; L = 2π)
     PeriodicBSplineBasis(UniformMesh(n, L), p)
+end
 
 """
     knotvector(b::PeriodicBSplineBasis)
@@ -203,8 +203,9 @@ function nodes(b::PeriodicBSplineBasis{T}) where {T}
     T[mod(sum(b.knots[b.offset + j + i] for i in 1:p) / p, L) for j in 1:nbasis(b)]
 end
 
-_cellcentre(b::PeriodicBSplineBasis, j::Integer) =
+function _cellcentre(b::PeriodicBSplineBasis, j::Integer)
     (b.knots[b.offset + j] + b.knots[b.offset + j + 1]) / 2
+end
 
 nnodes(b::PeriodicBSplineBasis) = nbasis(b)
 
@@ -252,18 +253,20 @@ function evaluate(b::PeriodicBSplineBasis{T}, j::Integer, x::Number, d::Integer 
     return v
 end
 
-evaluate(b::PeriodicBSplineBasis, j::Integer, X::AbstractVector, d::Integer = 0) =
+function evaluate(b::PeriodicBSplineBasis, j::Integer, X::AbstractVector, d::Integer = 0)
     [evaluate(b, j, x, d) for x in X]
+end
 
 function evaluate(b::PeriodicBSplineBasis{T}, û::AbstractVector, x::Number,
-                  d::Integer = 0) where {T}
+        d::Integer = 0) where {T}
     length(û) == nbasis(b) || throw(DimensionMismatch(
         "the coefficient vector has $(length(û)) entries but the basis has $(nbasis(b))"))
     sum(û[j] * evaluate(b, j, x, d) for j in eachindex(û))
 end
 
-evaluate(b::PeriodicBSplineBasis, û::AbstractVector, X::AbstractVector, d::Integer = 0) =
+function evaluate(b::PeriodicBSplineBasis, û::AbstractVector, X::AbstractVector, d::Integer = 0)
     [evaluate(b, û, x, d) for x in X]
+end
 
 (b::PeriodicBSplineBasis)(x::Number, j::Integer) = evaluate(b, j, x, 0)
 
@@ -273,21 +276,27 @@ Base.axes(b::PeriodicBSplineBasis) = (Inclusion(0 .. domainlength(b)), eachindex
 ContinuumArrays.grid(b::PeriodicBSplineBasis) = nodes(b)
 
 Base.hash(b::PeriodicBSplineBasis, h::UInt) = hash(b.mesh, hash(b.p, h))
-Base.:(==)(b1::PeriodicBSplineBasis, b2::PeriodicBSplineBasis) =
+function Base.:(==)(b1::PeriodicBSplineBasis, b2::PeriodicBSplineBasis)
     (b1.p == b2.p && b1.mesh == b2.mesh)
-Base.isequal(b1::PeriodicBSplineBasis{T1}, b2::PeriodicBSplineBasis{T2}) where {T1,T2} =
+end
+function Base.isequal(b1::PeriodicBSplineBasis{T1}, b2::PeriodicBSplineBasis{T2}) where {
+        T1, T2}
     (T1 == T2 && b1 == b2)
-Base.isapprox(b1::PeriodicBSplineBasis, b2::PeriodicBSplineBasis; kwargs...) =
+end
+function Base.isapprox(b1::PeriodicBSplineBasis, b2::PeriodicBSplineBasis; kwargs...)
     (b1.p == b2.p && isapprox(b1.mesh, b2.mesh; kwargs...))
+end
 
 Base.getindex(b::PeriodicBSplineBasis, x::Number, j::Integer) = evaluate(b, j, x, 0)
-Base.getindex(b::PeriodicBSplineBasis, x::Number,  ::Colon) =
+function Base.getindex(b::PeriodicBSplineBasis, x::Number, ::Colon)
     [evaluate(b, j, x, 0) for j in eachindex(b)]
-Base.getindex(b::PeriodicBSplineBasis, X::AbstractVector, j::Integer) =
+end
+function Base.getindex(b::PeriodicBSplineBasis, X::AbstractVector, j::Integer)
     [evaluate(b, j, x, 0) for x in X]
-Base.getindex(b::PeriodicBSplineBasis, X::AbstractVector,  ::Colon) =
+end
+function Base.getindex(b::PeriodicBSplineBasis, X::AbstractVector, ::Colon)
     [evaluate(b, j, x, 0) for x in X, j in eachindex(b)]
-
+end
 
 ## Derivative
 
@@ -305,11 +314,14 @@ derivatives of order higher than one use [`evaluate`](@ref) with an explicit `d`
 const PeriodicBSplineDerivative = QMul2{<:Derivative, <:PeriodicBSplineBasis}
 
 Base.getindex(D::PeriodicBSplineDerivative, x::Number, j::Integer) = evaluate(D.B, j, x, 1)
-Base.getindex(D::PeriodicBSplineDerivative, x::Number,  ::Colon) =
+function Base.getindex(D::PeriodicBSplineDerivative, x::Number, ::Colon)
     [evaluate(D.B, j, x, 1) for j in eachindex(D.B)]
-Base.getindex(D::PeriodicBSplineDerivative, X::AbstractVector, j::Integer) =
+end
+function Base.getindex(D::PeriodicBSplineDerivative, X::AbstractVector, j::Integer)
     [evaluate(D.B, j, x, 1) for x in X]
-Base.getindex(D::PeriodicBSplineDerivative, X::AbstractVector,  ::Colon) =
+end
+function Base.getindex(D::PeriodicBSplineDerivative, X::AbstractVector, ::Colon)
     [evaluate(D.B, j, x, 1) for x in X, j in eachindex(D.B)]
+end
 
 Base.adjoint(b::PeriodicBSplineBasis) = Derivative(axes(b, 1)) * b

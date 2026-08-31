@@ -4,7 +4,6 @@ using Random
 using Test
 
 @testset "$(rpad("Spline Quadrature Tests",80))" begin
-
     @testset "$(rpad("quadrature_order",76))" begin
         # nq points are exact to degree 2nq-1; degree 3p-1 is what consistency needs
         @test quadrature_order.(1:4) == [2, 3, 5, 6]
@@ -14,6 +13,7 @@ using Test
 
     @testset "$(rpad("nodes and weights",76))" begin
         for (nm, mk) in MESHES, p in 1:4
+
             b = PeriodicBSplineBasis(mk(16), p)
             q = SplineQuadrature(b)
             @test length(quadrature_nodes(q)) == 16 * q.nq
@@ -33,6 +33,7 @@ using Test
             Φ = basis_values(q, d)
             @test size(Φ) == (nbasis(b), length(x))
             for j in (1, 5, 12), r in (1, 17, length(x))
+
                 @test Φ[j, r] ≈ evaluate(b, j, x[r], d) atol = 1e-14
             end
         end
@@ -41,6 +42,7 @@ using Test
 
     @testset "$(rpad("mass matrix",76))" begin
         for (nm, mk) in MESHES, p in 1:4
+
             q = SplineQuadrature(PeriodicBSplineBasis(mk(16), p))
             M = mass_matrix(q)
             @test M ≈ transpose(M)
@@ -52,6 +54,7 @@ using Test
 
     @testset "$(rpad("basis integrals",76))" begin
         for (nm, mk) in MESHES, p in 1:4
+
             q = SplineQuadrature(PeriodicBSplineBasis(mk(16), p))
             Iv = basis_integrals(q)
             @test sum(Iv) ≈ domainlength(basis(q))
@@ -76,7 +79,7 @@ using Test
         # The proviso is that the quadrature integrate d_x (phi_k phi_l), of degree 2p-1,
         # exactly -- that is nq >= p. Below it the identity fails outright, by 9e-3 at
         # p = 3, nq = 2.
-        for (nm, mk) in MESHES, p in 1:4, nq in p:quadrature_order(p)+1
+        for (nm, mk) in MESHES, p in 1:4, nq in p:(quadrature_order(p) + 1)
             q = SplineQuadrature(PeriodicBSplineBasis(mk(16), p); nq = max(nq, 2))
             S = derivative_matrix(q)
             @test maximum(abs, S + transpose(S)) < 1e-12
@@ -86,17 +89,21 @@ using Test
         # used only a uniform mesh would therefore confirm the identity for the wrong
         # reason and hide the requirement above.
         for p in 3:4, nq in 2:3
+
             q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(16, 2π), p); nq = nq)
-            @test maximum(abs, derivative_matrix(q) + transpose(derivative_matrix(q))) < 1e-12
+            @test maximum(abs, derivative_matrix(q) + transpose(derivative_matrix(q))) <
+                  1e-12
         end
         for p in 3:4
             q = SplineQuadrature(PeriodicBSplineBasis(RandomMesh(16, 2π), p); nq = 2)
-            @test maximum(abs, derivative_matrix(q) + transpose(derivative_matrix(q))) > 1e-4
+            @test maximum(abs, derivative_matrix(q) + transpose(derivative_matrix(q))) >
+                  1e-4
         end
     end
 
     @testset "$(rpad("stiffness matrix",76))" begin
         for (nm, mk) in MESHES, p in 1:4
+
             q = SplineQuadrature(PeriodicBSplineBasis(mk(16), p))
             K = stiffness_matrix(q)
             @test K ≈ transpose(K)
@@ -110,6 +117,7 @@ using Test
         # every cell, so the un-integrated form is zero while the integrated one is not --
         # the integration by parts is then the only correct reading, not a convenience.
         for (nm, mk) in MESHES, p in 3:4
+
             q = SplineQuadrature(PeriodicBSplineBasis(mk(16), p))
             @test maximum(abs, mixed_matrix(q, 1, 2) + mixed_matrix(q, 0, 3)) < 1e-10
         end
@@ -125,10 +133,13 @@ using Test
         @test weighted_matrix(q, one, 0, 0) ≈ mass_matrix(q)
         @test weighted_matrix(q, one, 0, 1) ≈ derivative_matrix(q)
         # the vector form is the same as the function form
-        @test weighted_matrix(q, sin, 0, 1) ≈ weighted_matrix(q, sin.(quadrature_nodes(q)), 0, 1)
+        @test weighted_matrix(q, sin, 0, 1) ≈
+              weighted_matrix(q, sin.(quadrature_nodes(q)), 0, 1)
         @test_throws DimensionMismatch weighted_matrix(q, [1.0, 2.0], 0, 1)
         # against a direct quadrature of int sin(x) phi_k phi_l
-        Φ = basis_values(q, 0); w = quadrature_weights(q); x = quadrature_nodes(q)
+        Φ = basis_values(q, 0)
+        w = quadrature_weights(q)
+        x = quadrature_nodes(q)
         A = weighted_matrix(q, sin, 0, 0)
         @test A[3, 4] ≈ sum(w[r] * sin(x[r]) * Φ[3, r] * Φ[4, r] for r in eachindex(w))
     end
@@ -139,10 +150,14 @@ using Test
         for p in 1:4
             q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(16, 2π), p))
             qq = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(16, 2π), p); nq = 20)
-            Φ = basis_values(q, 0); Φ1 = basis_values(q, 1); w = quadrature_weights(q)
+            Φ = basis_values(q, 0)
+            Φ1 = basis_values(q, 1)
+            w = quadrature_weights(q)
             T = [sum(w[r] * Φ[m, r] * Φ[k, r] * Φ1[l, r] for r in eachindex(w))
                  for m in 1:3, k in 1:3, l in 1:3]
-            Ψ = basis_values(qq, 0); Ψ1 = basis_values(qq, 1); v = quadrature_weights(qq)
+            Ψ = basis_values(qq, 0)
+            Ψ1 = basis_values(qq, 1)
+            v = quadrature_weights(qq)
             Tex = [sum(v[r] * Ψ[m, r] * Ψ[k, r] * Ψ1[l, r] for r in eachindex(v))
                    for m in 1:3, k in 1:3, l in 1:3]
             @test maximum(abs, T - Tex) < 1e-13
@@ -153,7 +168,8 @@ using Test
         q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(32, 2π), 3))
         b = basis(q)
         û = l2_projection(q, sin)
-        @test maximum(abs, [evaluate(b, û, x) - sin(x) for x in range(0, 2π, length = 61)]) < 1e-5
+        @test maximum(abs, [evaluate(b, û, x) - sin(x) for x in range(0, 2π, length = 61)]) <
+              1e-5
         # the projection of a spline is that spline
         v̂ = randn(nbasis(b))
         @test l2_projection(q, evaluate(b, v̂, quadrature_nodes(q))) ≈ v̂
@@ -176,6 +192,7 @@ using Test
         # the whole point of the split -- so they are checked against each other on every
         # mesh family, and not only on the uniform mesh the allocation test above needs.
         for (nm, mk) in MESHES, p in 1:4
+
             qm = SplineQuadrature(PeriodicBSplineBasis(mk(16), p))
             fm = sin.(quadrature_nodes(qm))
             ûm = Vector{Float64}(undef, nbasis(basis(qm)))
@@ -195,7 +212,8 @@ using Test
 
     @testset "$(rpad("L2 projection converges at order p+1",76))" begin
         for p in 1:4
-            errs = Float64[]; hs = Float64[]
+            errs = Float64[]
+            hs = Float64[]
             for n in (16, 32, 64)
                 b = PeriodicBSplineBasis(GradedMesh(n, 2π), p)
                 q = SplineQuadrature(b; nq = quadrature_order(p) + 3)
@@ -204,7 +222,7 @@ using Test
                 push!(errs, maximum(abs, [evaluate(b, û, x) - sin(x) for x in xs]))
                 push!(hs, meshwidth(b))
             end
-            rate = log(errs[end-1] / errs[end]) / log(hs[end-1] / hs[end])
+            rate = log(errs[end - 1] / errs[end]) / log(hs[end - 1] / hs[end])
             @test rate > p + 0.8
         end
     end
@@ -214,5 +232,4 @@ using Test
         @test_throws ArgumentError SplineQuadrature(b; nq = 0)
         @test_throws ArgumentError SplineQuadrature(b; dmax = -1)
     end
-
 end
