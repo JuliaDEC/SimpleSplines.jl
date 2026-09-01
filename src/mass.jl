@@ -178,11 +178,24 @@ function Base.:\(op::MassOperator, X::AbstractMatrix)
     return Y
 end
 
-"""
-    mass_operator(M, mesh)
+@doc raw"""
+    mass_operator(M, basis)
 
-Build the [`MassOperator`](@ref) appropriate to `mesh`: a [`CirculantMass`](@ref) on a
-uniform mesh, a [`FactorizedMass`](@ref) otherwise.
+Build the [`MassOperator`](@ref) appropriate to `basis`: a [`CirculantMass`](@ref) for a
+periodic basis on a [`UniformMesh`](@ref), a [`FactorizedMass`](@ref) otherwise.
+
+!!! note "Circulance is a property of the basis, not of the mesh"
+    A uniform mesh is necessary but not sufficient. The mass matrix is circulant only when
+    every basis function is a translate of one cardinal spline, which needs the *periodic*
+    closure as well: a clamped basis on a uniform mesh has ``p`` boundary functions at each
+    end that are not translates of anything, and its mass matrix is banded but not circulant.
+    Dispatching on the mesh alone — as an earlier version of this function did, when the
+    periodic basis was the only one — would take the Fourier path for a clamped basis and get
+    wrong answers everywhere except in [`CirculantMass`](@ref)'s own verification, which
+    would reject it.
 """
-mass_operator(M::AbstractMatrix, ::Mesh) = FactorizedMass(M)
-mass_operator(M::AbstractMatrix, mesh::UniformMesh) = CirculantMass(M, ncells(mesh))
+mass_operator(M::AbstractMatrix, ::AbstractBSplineBasis) = FactorizedMass(M)
+
+function mass_operator(M::AbstractMatrix, b::PeriodicBSplineBasis)
+    mesh(b) isa UniformMesh ? CirculantMass(M, nbasis(b)) : FactorizedMass(M)
+end

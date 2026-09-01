@@ -11,6 +11,154 @@ The first release with any implementation in it. Before this the package was a
 `PkgTemplates` skeleton: a registered UUID, CI, docs scaffolding and a declared dependency
 set, with `src/SimpleSplines.jl` a bare `module … end`.
 
+### General boundary conditions and tensor products
+
+The package was periodic-only: one basis, on `[0,L)`, on a torus. It now covers bounded
+intervals with arbitrary homogeneous boundary conditions, and tensor products of any number
+of such bases with independent degree, mesh, domain and boundary condition on each axis.
+
+Nothing here was released before, so the reshaping below is not a breaking change to anything
+outside the package. Within it, two things moved: `Mesh` now describes a partition of a closed
+interval rather than a periodic one, and `breakpoints` accordingly returns `n+1` points instead
+of `n`. `cellbounds` is gone — it was `breakpoints` plus the periodic image of the first point,
+which is now what `breakpoints` itself returns.
+
+#### The three bases
+
+| basis | closure | dimension | reproduces |
+|:--|:--|:--|:--|
+| `BSplineBasis` | clamped — end knots repeated `p+1` times | `n + p` | polynomials of degree `≤ p` |
+| `PeriodicBSplineBasis` | breakpoints continued periodically | `n` | constants |
+| `RecombinedBSplineBasis` | clamped, plus one constraint per constrained end | `n + p − #constraints` | see below |
+
+`BSplineBasis(mesh, p, bc)` returns whichever of the three the boundary condition calls for.
+That is deliberate rather than an accident of naming: it lets one call site select any of them,
+which is what a tensor product with a different condition on each axis needs.
+
+#### Boundary conditions are types, not symbols
+
+`Periodic`, `Free`, `Dirichlet`, `Neumann`, `Natural`, `Robin(α, β)` and the general local
+`Constraint(c...)`. A single condition applies to both ends, a two-tuple gives left and right,
+and lowercase symbols are accepted as sugar and normalised on construction.
+
+Three reasons this is not a symbol:
+
+- **`Robin` carries coefficients.** `:robin` has nowhere to put `α` and `β`.
+- **The ends can differ.** `(Dirichlet(), Neumann())` is the natural spelling; `Periodic` is
+  rejected in a pair, because it identifies the two ends rather than constraining one.
+- **A typo fails at the call site.** In the code this replaces, an unrecognised symbol fell
+  through an `else` branch to the unconstrained basis, so `:nothing` selected the clamped basis
+  *by accident* and `:Perodic` would have done the same silently. `Free()` says it, and
+  `BoundaryCondition(:perodic)` throws and names the accepted set.
+
+Two names changed meaning and therefore throw rather than being accepted case-insensitively:
+`:Natural` used to mean the *unconstrained* clamped basis, which is now `Free()`, while
+`:natural` now means the actual natural condition `u'' = 0`. Silently handing back a different
+function space than a caller's old code had is exactly the failure this API exists to prevent,
+so the error spells the rename out.
+
+Constraints are imposed by **recombination**: for a condition `L u(a) = 0` of order `m`, the
+`m+1` functions that violate it are replaced by the `m` combinations
+`ψ_t = φ_t − (Lφ_t(a) / Lφ_{m+1}(a)) φ_{m+1}` that `L` annihilates identically. Each
+constrained end costs exactly one degree of freedom whatever the order of its condition, and
+for `Dirichlet` the construction degenerates to dropping `φ_1` — the textbook elimination.
+The mass matrix stays symmetric positive definite and banded, and every assembly is the
+parent's conjugated by the sparse recombination matrix, `M̃ = Rᵀ M R`, which is why
+`SplineQuadrature` needed no recombined special case.
+
+Deliberately out of scope: **nonlocal** constraints. Imposing `u(a) = u(b)` other than through
+`Periodic`, or an integral condition, needs the nullspace of a dense constraint matrix, which
+destroys the banding every assembly here relies on.
+
+#### `polynomial_reproduction`
+
+Reports the largest `m` with every polynomial of degree `≤ m` in the span: `p` for a clamped
+basis, `0` for a periodic one, `-1` for a Dirichlet-recombined one, and the minimum over the
+axes for a tensor product.
+
+This exists because the boundary condition is **not** a free choice in a conservative scheme.
+A Galerkin or particle discretisation conserves `∫ π(v) f dv` for a polynomial `π` exactly when
+`π` is in the span of the basis, so a scheme whose conservation of mass, momentum and energy
+rests on `1, v, v²` needs the value to be at least `2` — which a periodic axis (`v` is not
+periodic) and a Dirichlet condition (nothing survives, not even the constants) both fail.
+Turning that from a property a reader has to know into a number a test can assert is the whole
+point.
+
+#### `evaluate_all` — local evaluation
+
+`evaluate_all!(values, b, x, d)` gives the `local_width(b)` basis functions that do not vanish
+at `x`, and the index of the first. Depositing `N_p` particles costs `O(N_p p²)` through it and
+`O(N_p N)` through `evaluate` one index at a time, which is the difference between a loop over
+the `p+1` functions overlapping a particle and a loop over the whole basis. It is
+allocation-free, and the suite asserts that: the breakpoints are cached in the basis rather than
+rebuilt from the mesh on every `findcell`, which was a 320-byte allocation per call in the
+innermost loop of a deposition.
+
+`evaluate_all` runs de Boor's triangular scheme and then lifts the block from degree `p−d` to
+degree `p` by the derivative recursion. `_bspline` — the Cox-de Boor recursion written out as it
+stands — remains the reference, and the suite checks the two against each other at every degree,
+every derivative order, all four mesh families and every boundary condition, and separately that
+nothing outside the reported block is nonzero.
+
+#### `GeneralMesh`
+
+A mesh from explicit breakpoints, for a subdivision none of the three families describes. The
+case it exists for is a mesh that is uniform inside but carries one oversized cell at each end —
+the device particle discretisations of kinetic equations use to keep a particle that strays
+outside the resolved region inside the support of the basis.
+
+#### Domains via `DomainSets`
+
+`domain(mesh)` and `domain(basis)` return a `ClosedInterval`; `domain` of a tensor product
+returns a `ProductDomain`, so `x ∈ domain(B)` answers for a vector. `DomainSets` re-exports the
+`IntervalSets` `..` that `ContinuumArrays` already used, so `0 .. 1` is the same binding reached
+through two re-exporters rather than two competing ones, and `..` is re-exported here so that
+`using SimpleSplines` is enough to write a domain.
+
+Mesh constructors take a domain as an interval, a tuple, or a single number `L` standing for
+`[0,L]`. An integer domain is promoted: `UniformMesh(4, 0 .. 1)` would otherwise try to store
+`0.25` in an `Int` and throw from inside `breakpoints`, a long way from the constructor that
+chose the type. `Rational` and extended-precision types are left alone, being closed under the
+division `breakpoints` performs.
+
+#### `TensorProductBasis` and `TensorProductQuadrature`
+
+`TensorProductBasis(b₁, …, b_D)`, or `b₁ ⊗ b₂`. Coefficients are a `D`-dimensional array of
+size `size(B)`, which is the shape that makes the Kronecker structure of every operator visible
+and lets `CartesianIndices` do the index arithmetic — one of the places a hand-rolled tensor
+product reliably goes wrong, since the flattening convention has to agree between the
+evaluation, the mass matrix and the projection.
+
+The Kronecker structure is **used**, not merely noted:
+
+- `KroneckerMass` never forms `M = M⁽ᴰ⁾ ⊗ … ⊗ M⁽¹⁾`. A solve applies each factor's inverse
+  along its own axis, which is an identity and not an approximate splitting. Each factor keeps
+  its own representation, so a periodic uniform axis still takes the Fourier path while a
+  clamped one takes the Cholesky. At the 41-element cubic basis of a two-dimensional velocity
+  space this avoids a 1681×1681 dense Cholesky; in three dimensions it avoids a 68921² one,
+  which does not fit.
+- `contract` assembles a load array as `D` successive sparse contractions with the
+  one-dimensional tabulations, cycling each contracted axis to the back so that every step is
+  one sparse matrix product. The integrand need not be separable — only the basis is, and that
+  is enough. This is what `l2_projection` uses, and `quadrature_sample` exposes the grid for an
+  integrand that is built from a spline already in hand rather than given as a function of
+  position.
+- There is no `D`-dimensional tabulation. Holding the per-axis ones is `O(Σ_d N_d n_d n_{q,d})`
+  rather than the `O(N Π_d n_d n_{q,d})` a `D`-dimensional table would cost.
+
+`mass_operator` now dispatches on the **basis** rather than the mesh. A uniform mesh is
+necessary but not sufficient for circulance: it also needs the periodic closure, since a clamped
+basis has `p` boundary functions at each end that are not translates of anything. Dispatching on
+the mesh alone, as the periodic-only version did, would take the Fourier path for a clamped
+basis.
+
+One trap is recorded in the source alongside the FFTW planner one below, for the same reason.
+`_apply_along!` copies each fibre into a contiguous buffer rather than passing a view: a view
+into the middle index of a three-way reshape has a stride, and an FFTW plan encodes the strides
+of the array it was planned for, not merely its alignment — so the `CirculantMass` plan rejects
+such a fibre outright with "plan applied to wrong-strides array". Creating the plans `UNALIGNED`,
+which is what lets them accept a *contiguous* column view, does not help.
+
 ### Periodic B-spline finite elements
 
 The package now provides one basis and one assembly table built on it.
