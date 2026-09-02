@@ -225,6 +225,24 @@ using Test
         for x in (-2.3, -0.1, 0.4, 1.7, 5.0)
             @test evaluate(bp, v̂, x) ≈ evaluate(bp, v̂, mod(x, 1.0))
         end
+
+        # the sweep over a vector of points shares one block buffer, so it must agree with
+        # the point-by-point path exactly -- same arithmetic, one allocation instead of many
+        xs = collect(range(-0.2, 1.2; length = 41))
+        for bc in (Free(), Dirichlet(), Neumann(), Periodic()), d in 0:2
+
+            b = BSplineBasis(UniformMesh(16, 0 .. 1), 3, bc)
+            û = randn(nbasis(b))
+            @test evaluate(b, û, xs, d) == [evaluate(b, û, x, d) for x in xs]
+            @test evaluate(b, û, xs, d) isa Vector{Float64}
+        end
+
+        # `s(v)` routes to that sweep rather than broadcasting the scalar method
+        s = Spline(BSplineBasis(UniformMesh(16, 0 .. 1), 3), randn(19))
+        @test s(xs) == [s(x) for x in xs]
+
+        @test_throws DimensionMismatch evaluate(
+            BSplineBasis(UniformMesh(16, 0 .. 1), 3), zeros(3), xs)
     end
 
     @testset "$(rpad("local evaluation is allocation-free",76))" begin

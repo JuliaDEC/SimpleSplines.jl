@@ -589,17 +589,27 @@ function evaluate(b::AbstractBSplineBasis{T}, û::AbstractVector{S}, x::Number,
     length(û) == nbasis(b) || throw(DimensionMismatch(
         "the coefficient vector has $(length(û)) entries but the basis has $(nbasis(b))"))
     R = _evaltype(promote_type(T, S), typeof(x))
+    _evaluate_block!(Vector{R}(undef, local_width(b)), b, û, x, d)
+end
 
+# The local-block sum, against a caller-supplied buffer. Only the block contributes, so this
+# is O(p) per point where summing `evaluate` over `eachindex(û)` is O(N).
+#
+# Split out so that a sweep over many points allocates one buffer for the sweep rather than
+# one per point. The buffer is the whole of the difference between this and BSplineKit at
+# small `n`, which reaches the block through the spline order carried in its *type* and can
+# therefore keep it on the stack; here the degree is a field, so the length is a run-time
+# value. Passing a `Val`-sized `MVector` instead was measured and does not help -- it halves
+# the allocation and returns the saving in dispatch, because `evaluate_all!` takes an
+# `AbstractVector` and the buffer escapes into it either way.
+function _evaluate_block!(values::AbstractVector{R}, b::AbstractBSplineBasis,
+        û::AbstractVector, x::Number, d::Integer) where {R}
     # Outside the domain of a bounded basis the spline is zero, as the docstring above says.
     # The local path cannot discover that on its own: `findcell` clamps to the nearest cell
     # and de Boor's recursion would then extrapolate that cell's polynomial. A periodic basis
     # reduces its argument instead, so for it every real `x` is inside.
     _inside(b, x) || return zero(R)
 
-    # Only the local block, not the whole basis. Summing `evaluate` over `eachindex(û)` is
-    # O(N) per point, which made evaluating a `Spline` in one dimension asymptotically worse
-    # than the tensor-product method beside it, which has always taken this path.
-    values = Vector{R}(undef, local_width(b))
     j₀ = evaluate_all!(values, b, x, d)
 
     v = zero(R)
@@ -614,9 +624,21 @@ function evaluate(b::AbstractBSplineBasis{T}, û::AbstractVector{S}, x::Number,
     return v
 end
 
-function evaluate(b::AbstractBSplineBasis, û::AbstractVector, X::AbstractVector,
-        d::Integer = 0)
-    [evaluate(b, û, x, d) for x in X]
+function evaluate(b::AbstractBSplineBasis{T}, û::AbstractVector{S}, X::AbstractVector,
+        d::Integer = 0) where {T, S}
+    length(û) == nbasis(b) || throw(DimensionMismatch(
+        "the coefficient vector has $(length(û)) entries but the basis has $(nbasis(b))"))
+    R = _evaltype(promote_type(T, S), eltype(X))
+
+    # One buffer for the whole sweep. Evaluating point by point through the scalar method
+    # takes one per point, which for a plot or a diagnostic over a fine grid is the entire
+    # allocation of the call.
+    values = Vector{R}(undef, local_width(b))
+    out = Vector{R}(undef, length(X))
+    for (i, x) in pairs(X)
+        out[i] = _evaluate_block!(values, b, û, x, d)
+    end
+    return out
 end
 
 (b::AbstractBSplineBasis)(x::Number, j::Integer) = evaluate(b, j, x, 0)

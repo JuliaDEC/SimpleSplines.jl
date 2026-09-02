@@ -264,9 +264,19 @@ being the one representation with no in-place solve.
 
 Evaluating a spline — `evaluate(b, û, x)`, and therefore a callable `Spline` — sums the local
 block of `p+1` functions rather than the whole basis, which it did until this was measured:
-at `N = 1027` a single evaluation cost 24 µs and scaled linearly with `N`. Outside a bounded
-domain the result is still zero, which the local path has to be told, `findcell` clamping to
-the nearest cell where de Boor's recursion would otherwise extrapolate its polynomial.
+at `N = 1027` a single evaluation cost 24 µs and scaled linearly with `N`. It is now flat in
+`N`, 21.8 ns per point at every size from 64 to 4096 cells. Outside a bounded domain the
+result is still zero, which the local path has to be told, `findcell` clamping to the nearest
+cell where de Boor's recursion would otherwise extrapolate its polynomial.
+
+Evaluating at a *vector* of points shares one block buffer across the sweep, so
+`evaluate(b, û, xs)` — and `s(xs)`, which routes to it — costs 13.6 ns and 8 bytes per point
+against the 22.1 ns and 190 bytes of going through the scalar method once per point. The
+scalar method still takes a buffer per call: the degree is a field here rather than a type
+parameter, so the block length is a run-time value and cannot live on the stack. A
+`Val`-sized `MVector` was measured and rejected — it halves the allocation and gives the
+saving straight back in dispatch, `evaluate_all!` taking an `AbstractVector` into which the
+buffer escapes either way.
 
 That buffer is mutable state on a struct that reads as immutable, as the memoising `cache`
 behind `mixed_matrix` already was, so the `SplineQuadrature` docstring now warns that one
