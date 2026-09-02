@@ -1,5 +1,6 @@
 module SimpleSplines
 
+using BandedMatrices
 using ContinuumArrays
 using FFTW
 using LinearAlgebra
@@ -53,7 +54,7 @@ export boundary, basis_index, findcell, local_width, polynomial_reproduction
 
 include("bspline.jl")
 
-export MassOperator, CirculantMass, FactorizedMass, mass_operator, mass_solve!
+export MassOperator, CirculantMass, FactorizedMass, BandedMass, mass_operator, mass_solve!
 
 include("mass.jl")
 

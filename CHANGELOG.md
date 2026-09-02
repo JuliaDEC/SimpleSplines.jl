@@ -203,19 +203,33 @@ non-uniform mesh.
 
 ### `MassOperator`
 
-Solves against the mass matrix go through a representation chosen by the mesh:
+Solves against the mass matrix go through a representation chosen by the **basis**:
 
-- `CirculantMass` on a `UniformMesh`, where the basis functions are translates of a single
-  cardinal spline and the matrix is circulant, hence diagonalised by the discrete Fourier
-  transform. A solve is two planned transforms and a pointwise division, and allocates
-  nothing beyond its result.
-- `FactorizedMass` otherwise. On a graded or random mesh the matrix is banded modulo `N` but
-  *not* circulant — the basis functions are no longer translates of one another — so there is
-  nothing for a transform to diagonalise and a sparse Cholesky is what is left.
+- `CirculantMass` for a periodic basis on a `UniformMesh`, where the basis functions are
+  translates of a single cardinal spline and the matrix is circulant, hence diagonalised by
+  the discrete Fourier transform. A solve is two planned transforms and a pointwise division,
+  and allocates nothing beyond its result.
+- `BandedMass` for a bounded basis, clamped or recombined. There is no seam, so the overlaps
+  are contiguous and the matrix is banded outright rather than banded modulo `N`. A banded
+  Cholesky solves it in `O(Np)` and — unlike CHOLMOD, which has no in-place `ldiv!` — solves
+  it with **no allocation at all**.
+- `FactorizedMass` for a periodic basis on a graded or random mesh. There the matrix is banded
+  modulo `N` but *not* circulant — the basis functions are no longer translates of one
+  another — so there is nothing for a transform to diagonalise, and the wrap-around entries
+  put it outside the banded representation too. A sparse Cholesky is what is left.
+
+Dispatching on the basis rather than the mesh is what makes this correct: a uniform mesh is
+necessary for circulance but not sufficient, since a clamped basis on one has `p` boundary
+functions at each end that are not translates of anything.
 
 The construction *verifies* circulance rather than assuming it. A matrix that is banded but
 not circulant would still produce plausible numbers through the transform, and the failure
-would surface much later as a wrong conservation law downstream.
+would surface much later as a wrong conservation law downstream. The check walks the stored
+entries rather than probing all `N²` positions: within a column the row indices are distinct
+and `r = mod1(i-j+1, N)` is a bijection, so comparing the count of above-tolerance hits with
+the count in the first column covers the unstored positions as well. At `N = 512` that is
+0.004 ms against 9.1 ms, and it is what keeps `SplineQuadrature` construction linear in `n`
+on a periodic uniform mesh instead of growing as roughly `n^2.7`.
 
 One trap is recorded in the source because it cost real time to find:
 `plan_rfft(c; flags = FFTW.UNALIGNED)` *replaces* the planner flags rather than adding to
@@ -239,13 +253,20 @@ is one of these constants too, and is now assembled with the quadrature and retu
 reference rather than recomputed per call.
 
 The paths a time integrator actually runs per step allocate nothing. Evaluation is
-allocation-free at any degree and derivative order on any mesh; a `CirculantMass` solve is
-allocation-free; and `l2_projection!` is now allocation-free end to end on a uniform mesh,
-the `f ⊙ w` product going into a buffer held by the quadrature and the load vector being
-formed with `mul!` straight into the output. The buffer is taken only when the product lands
-in the quadrature's element type, so a wider sample — a complex `f` — is still projected,
-through a product of its own, rather than narrowed into it. On a non-uniform mesh a CHOLMOD
-temporary remains, CHOLMOD having no in-place `ldiv!`.
+allocation-free at any degree and derivative order on any mesh; a `CirculantMass` and a
+`BandedMass` solve are both allocation-free; and `l2_projection!` is allocation-free end to
+end on every basis except the periodic non-uniform one, the `f ⊙ w` product going into a
+buffer held by the quadrature and the load vector being formed with `mul!` straight into the
+output. The buffer is taken only when the product lands in the quadrature's element type, so
+a wider sample — a complex `f` — is still projected, through a product of its own, rather
+than narrowed into it. Only the periodic non-uniform case keeps a CHOLMOD temporary, that
+being the one representation with no in-place solve.
+
+Evaluating a spline — `evaluate(b, û, x)`, and therefore a callable `Spline` — sums the local
+block of `p+1` functions rather than the whole basis, which it did until this was measured:
+at `N = 1027` a single evaluation cost 24 µs and scaled linearly with `N`. Outside a bounded
+domain the result is still zero, which the local path has to be told, `findcell` clamping to
+the nearest cell where de Boor's recursion would otherwise extrapolate its polynomial.
 
 That buffer is mutable state on a struct that reads as immutable, as the memoising `cache`
 behind `mixed_matrix` already was, so the `SplineQuadrature` docstring now warns that one
@@ -256,6 +277,10 @@ quadrature must not be shared between threads.
 `BSplineKit` was dropped: the basis is implemented here, and its variable-coefficient
 assemblies do not map onto that package's Galerkin interface. `FFTW` and `SparseArrays` were
 added for the above, and `CompactBasisFunctions` for the shared `Basis` hierarchy.
+
+`BandedMatrices` was added for `BandedMass`. It adds nothing to the dependency tree: it is
+already a hard dependency of `ContinuumArrays`, so this only makes an existing transitive
+dependency explicit.
 
 ### Repository and CI
 
@@ -284,6 +309,33 @@ the test suite and refuses the push if it fails; `SIMPLESPLINES_SKIP_TESTS=1` ov
 
 ### Fixed
 
+Found in review of the branch, not by the suite, and each now has a regression test:
+
+- **`contract` consumed the array it was given.** The quadrature weights are applied in
+  place, and the copy that was meant to protect the caller was `convert(Array{R}, F)` —
+  the *identity* when `F` already has the working element type, which is exactly what
+  `quadrature_sample` returns. The caller's sample came back scaled by the weights, so a
+  second `l2_projection` of the same array gave a different answer. It now copies.
+- **The per-axis loops of a tensor product were type-unstable**, and it cost 248×.
+  `prod(dims[1:(k-1)])` slices a tuple to a length inference cannot know, so the reshape
+  built from it inferred as `Any` and every element access in `contract` and in every
+  `KroneckerMass` solve became a dynamic dispatch. Multiplying the extents out in a plain
+  loop fixes it: `_scale_along!` on a 160×160 array went from 1862 µs and 2.9 MB to 14.8 µs
+  and no allocation, `contract` from 5.3 MB to 0.33 MB per call.
+- **`KroneckerMass` multiplication copied every fibre.** `_apply_along!` now hands `f!` two
+  distinct buffers, so `mul!` needs no defensive copy of its own.
+- **`local_width` was recomputed on every `evaluate_all!` of a recombined basis**, making the
+  particle path `O(ncells)` per point rather than `O(p²)`. It is a constant of the basis and
+  is now stored with `firstcol`/`lastcol`.
+- **Building a `RecombinedBSplineBasis` was `O(n²)`**: the cell-to-column table scanned every
+  nonzero of `R` once per cell. Each nonzero is now visited once and the cells it reaches are
+  updated, which at `n = 1024` is 0.01 ms against 1.24 ms.
+- **`GradedMesh` and `RandomMesh` rebuilt their breakpoints on every call**, `RandomMesh`
+  re-running its `Xoshiro` stream each time — 19 kB per `findcell`. Both now hold the vector,
+  as `GeneralMesh` always did. `meshwidth` no longer materialises a `diff`.
+- A stale paragraph in the `SplineQuadrature` docstring described `Φ` as stored densely "so
+  the contractions run as one BLAS call". It is a `SparseMatrixCSC`, and the comment beside
+  the assembly argues correctly for the opposite.
 - `QuadratureRules` compat was `"0.1"`, which could not co-resolve with
   `CompactBasisFunctions`; it is now `"0.2"`.
 - `LinearAlgebra` compat was `"1.12.0"` alongside `julia = "1.10"`, which contradicted the

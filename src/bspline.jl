@@ -146,13 +146,14 @@ meshwidth(b::AbstractBSplineBasis) = meshwidth(mesh(b))
 @doc raw"""
     breakpoints(b::AbstractBSplineBasis)
 
-The `n+1` cell boundaries of the basis, read from the copy cached in the basis rather than
-recomputed from the mesh.
+The `n+1` cell boundaries of the basis, held by the basis rather than asked of the mesh on
+every call.
 
-The cache is what keeps [`evaluate_all!`](@ref) allocation-free. `breakpoints(::Mesh)` builds
-a fresh vector on every call — it has to, since a mesh is a description of a subdivision and
-not a stored one — and `findcell` is on the innermost loop of a particle deposition, where a
-264-byte allocation per particle per step is the whole cost of the routine.
+This is what keeps [`evaluate_all!`](@ref) allocation-free, `findcell` being on the innermost
+loop of a particle deposition where one allocation per particle per step is the whole cost of
+the routine. [`UniformMesh`](@ref) still builds its vector on demand, its breakpoints being a
+closed form and its own `findcell` a division that needs none of them; the other mesh families
+hold theirs.
 """
 breakpoints(b::AbstractBSplineBasis) = b.breaks
 
@@ -583,10 +584,34 @@ function evaluate(b::AbstractBSplineBasis, j::Integer, X::AbstractVector, d::Int
     [evaluate(b, j, x, d) for x in X]
 end
 
-function evaluate(b::AbstractBSplineBasis, û::AbstractVector, x::Number, d::Integer = 0)
+function evaluate(b::AbstractBSplineBasis{T}, û::AbstractVector{S}, x::Number,
+        d::Integer = 0) where {T, S}
     length(û) == nbasis(b) || throw(DimensionMismatch(
         "the coefficient vector has $(length(û)) entries but the basis has $(nbasis(b))"))
-    sum(û[j] * evaluate(b, j, x, d) for j in eachindex(û))
+    R = _evaltype(promote_type(T, S), typeof(x))
+
+    # Outside the domain of a bounded basis the spline is zero, as the docstring above says.
+    # The local path cannot discover that on its own: `findcell` clamps to the nearest cell
+    # and de Boor's recursion would then extrapolate that cell's polynomial. A periodic basis
+    # reduces its argument instead, so for it every real `x` is inside.
+    _inside(b, x) || return zero(R)
+
+    # Only the local block, not the whole basis. Summing `evaluate` over `eachindex(û)` is
+    # O(N) per point, which made evaluating a `Spline` in one dimension asymptotically worse
+    # than the tensor-product method beside it, which has always taken this path.
+    values = Vector{R}(undef, local_width(b))
+    j₀ = evaluate_all!(values, b, x, d)
+
+    v = zero(R)
+    for t in eachindex(values)
+        j = basis_index(b, j₀ + t - 1)
+        # A periodic axis wraps, so every index is in range; a bounded one does not, and an
+        # index outside 1:N means the block of this cell reaches past the end of the basis.
+        # Such a term is genuinely absent rather than zero-valued, so it is skipped.
+        1 ≤ j ≤ nbasis(b) || continue
+        v += values[t] * û[j]
+    end
+    return v
 end
 
 function evaluate(b::AbstractBSplineBasis, û::AbstractVector, X::AbstractVector,
@@ -750,7 +775,6 @@ function evaluate_all!(values::AbstractVector{R}, b::AbstractBSplineBasis, x::Nu
         r = count            # the degree being stepped up to, p-d+m+1
         # Descending, so that values[t-1] and values[t] are still the previous step's when
         # they are read. values[count+1] is the new bottom entry and reads a zero above it.
-        prev_top = zero(R)
         for t in (count + 1):-1:1
             below = t ≥ 2 ? values[t - 1] : zero(R)
             above = t ≤ count ? values[t] : zero(R)
@@ -762,7 +786,6 @@ function evaluate_all!(values::AbstractVector{R}, b::AbstractBSplineBasis, x::Nu
             db > 0 && (out -= above / db)
             values[t] = r * out
         end
-        prev_top = prev_top   # kept out of the loop body; see the comment above
         count += 1
     end
 
@@ -794,6 +817,13 @@ _reduce_argument(::BSplineBasis, x) = x
 function _reduce_argument(b::PeriodicBSplineBasis, x)
     a = leftendpoint(domain(b))
     a + mod(x - a, domainlength(b))
+end
+
+# Whether a point carries any of the basis at all. A periodic basis reduces its argument, so
+# it always does; a bounded one is zero outside its closed domain.
+_inside(::PeriodicBSplineBasis, x) = true
+function _inside(b::AbstractBSplineBasis, x)
+    leftendpoint(domain(b)) ≤ x ≤ rightendpoint(domain(b))
 end
 
 ## ---------------------------------------------------------------------------------------

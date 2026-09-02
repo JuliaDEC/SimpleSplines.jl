@@ -354,6 +354,25 @@ The tuple of one-dimensional [`MassOperator`](@ref)s, axis order.
 """
 mass_factors(op::KroneckerMass) = op.ops
 
+# The extents of a D-dimensional array before and after axis k, for the three-way reshape the
+# per-axis loops below work on.
+#
+# Written as a loop rather than as `prod(dims[1:(k-1)]; init = 1)`. Slicing a tuple with a
+# runtime `k` gives a tuple whose *length* is not known to inference, so the product infers as
+# `Any`, the `reshape` built from it infers as `Any`, and every element access in the loops
+# that follow becomes a dynamic dispatch. Indexing the tuple one element at a time keeps `k`
+# a run-time value and the result an `Int`. Measured on a 160x160 array, the difference in
+# `_scale_along!` is 1862 us and 2.9 MB against 7.5 us and no allocation.
+@inline function _splitdims(dims::NTuple{D, Int}, k::Integer) where {D}
+    before = 1
+    after = 1
+    for i in 1:D
+        i < k && (before *= dims[i])
+        i > k && (after *= dims[i])
+    end
+    return before, after
+end
+
 # Apply a one-dimensional operator along axis k of a D-dimensional array, in place. The array
 # is viewed as (before, N_k, after) and each fibre along the middle index is solved on its own.
 #
@@ -362,22 +381,26 @@ mass_factors(op::KroneckerMass) = op.ops
 # of the array it was planned for, not merely its alignment -- so the plan behind a
 # `CirculantMass` rejects such a fibre outright with "plan applied to wrong-strides array".
 # Creating the plans UNALIGNED, which is what lets them accept a *contiguous* column view,
-# does not help here. One buffer is allocated per axis and reused across that axis's fibres,
+# does not help here. The buffers are allocated per axis and reused across that axis's fibres,
 # which keeps the operator itself stateless and therefore usable from several threads at once.
+#
+# `f!` receives (out, op, in) with two *distinct* buffers, so a method that cannot alias its
+# arguments -- `mul!` -- needs no defensive copy of its own.
 function _apply_along!(f!, A::AbstractArray{T}, op, k::Integer) where {T}
     dims = size(A)
-    before = prod(dims[1:(k - 1)]; init = 1)
-    after = prod(dims[(k + 1):end]; init = 1)
-    A3 = reshape(A, before, dims[k], after)
-    buf = Vector{T}(undef, dims[k])
+    before, after = _splitdims(dims, k)
+    nk = dims[k]
+    A3 = reshape(A, before, nk, after)
+    src = Vector{T}(undef, nk)
+    dst = Vector{T}(undef, nk)
     for j in 1:after, i in 1:before
 
-        @inbounds for r in 1:dims[k]
-            buf[r] = A3[i, r, j]
+        @inbounds for r in 1:nk
+            src[r] = A3[i, r, j]
         end
-        f!(buf, op, buf)
-        @inbounds for r in 1:dims[k]
-            A3[i, r, j] = buf[r]
+        f!(dst, op, src)
+        @inbounds for r in 1:nk
+            A3[i, r, j] = dst[r]
         end
     end
     return A
@@ -398,7 +421,7 @@ function LinearAlgebra.mul!(y::AbstractArray, op::KroneckerMass{T, D},
     y === x || copyto!(y, x)
     Y = reshape(y, op.dims)
     for k in 1:D
-        _apply_along!((o, A, i) -> mul!(o, mass_matrix(A), copy(i)), Y, op.ops[k], k)
+        _apply_along!((o, A, i) -> mul!(o, mass_matrix(A), i), Y, op.ops[k], k)
     end
     return y
 end
@@ -578,7 +601,13 @@ function contract(q::TensorProductQuadrature{T, D}, F::AbstractArray{S, D},
         "the sample is $(size(F)) but the quadrature grid is $(quadrature_grid_size(q))"))
 
     R = promote_type(T, S)
-    B = convert(Array{R}, F)
+
+    # A copy, always. `convert(Array{R}, F)` is the *identity* when `F` is already an
+    # `Array{R}`, and the weighting below is in place -- so converting here would scale the
+    # caller's own sample by the quadrature weights and leave it that way. `F` is very often
+    # exactly such an array, since `quadrature_sample` returns one.
+    B = Array{R}(undef, size(F))
+    copyto!(B, F)
 
     # The weights of every axis, applied once, before any contraction. Doing it here rather
     # than inside the loop keeps the weighting a single elementwise pass and makes the
@@ -601,10 +630,10 @@ end
 
 function _scale_along!(A::AbstractArray, w::AbstractVector, k::Integer)
     dims = size(A)
-    before = prod(dims[1:(k - 1)]; init = 1)
-    after = prod(dims[(k + 1):end]; init = 1)
-    A3 = reshape(A, before, dims[k], after)
-    for j in 1:after, r in 1:dims[k], i in 1:before
+    before, after = _splitdims(dims, k)
+    nk = dims[k]
+    A3 = reshape(A, before, nk, after)
+    @inbounds for j in 1:after, r in 1:nk, i in 1:before
         A3[i, r, j] *= w[r]
     end
     return A

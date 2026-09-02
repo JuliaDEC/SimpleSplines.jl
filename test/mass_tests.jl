@@ -72,6 +72,41 @@ using Test
         @test (@allocated mass_solve!(y, op, b)) == 0
     end
 
+    @testset "$(rpad("the representation follows the basis, not the mesh",76))" begin
+        # a bounded basis has no seam, so its mass matrix is banded outright; a periodic one
+        # on a non-uniform mesh wraps and is only banded modulo N, which is what keeps it on
+        # the sparse Cholesky
+        u = UniformMesh(32, 0 .. 1)
+        g = GradedMesh(32, 0 .. 1)
+        @test mass_operator(SplineQuadrature(BSplineBasis(u, 3))) isa BandedMass
+        @test mass_operator(SplineQuadrature(BSplineBasis(g, 3))) isa BandedMass
+        @test mass_operator(SplineQuadrature(BSplineBasis(u, 3, Dirichlet()))) isa
+              BandedMass
+        @test mass_operator(SplineQuadrature(BSplineBasis(g, 3, Neumann()))) isa BandedMass
+        @test mass_operator(SplineQuadrature(PeriodicBSplineBasis(u, 3))) isa CirculantMass
+        @test mass_operator(SplineQuadrature(PeriodicBSplineBasis(g, 3))) isa FactorizedMass
+    end
+
+    @testset "$(rpad("the banded solve matches the dense one and does not allocate",76))" begin
+        for p in 1:4, bc in (Free(), Dirichlet(), Neumann(), Robin(1.0, 2.0)),
+            m in (UniformMesh(24, 0 .. 1), GradedMesh(24, 0 .. 1), RandomMesh(24, 0 .. 1))
+            q = SplineQuadrature(BSplineBasis(m, p, bc))
+            op = mass_operator(q)
+            @test op isa BandedMass
+            N = nbasis(q)
+            x = randn(N)
+            @test op \ x ≈ Matrix(mass_matrix(q)) \ x
+
+            y = similar(x)
+            @test mass_solve!(y, op, x) ≈ op \ x
+            z = copy(x)
+            @test mass_solve!(z, op, z) ≈ op \ x        # y and x may alias
+            # the banded factor solves in place, so unlike CHOLMOD this allocates nothing
+            mass_solve!(y, op, x)
+            @test (@allocated mass_solve!(y, op, x)) == 0
+        end
+    end
+
     @testset "$(rpad("accessors and errors",76))" begin
         q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(16, 2π), 3))
         op = mass_operator(q)

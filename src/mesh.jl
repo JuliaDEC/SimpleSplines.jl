@@ -84,7 +84,14 @@ Base.last(m::Mesh) = rightendpoint(domain(m))
 
 The largest cell width, the ``h`` that convergence rates are measured against.
 """
-meshwidth(m::Mesh) = maximum(diff(breakpoints(m)))
+function meshwidth(m::Mesh)
+    y = breakpoints(m)
+    h = zero(eltype(y))
+    for i in firstindex(y):(lastindex(y) - 1)
+        h = max(h, y[i + 1] - y[i])
+    end
+    return h
+end
 
 Base.hash(m::Mesh, h::UInt) = hash(breakpoints(m), hash(domain(m), h))
 function Base.:(==)(m1::Mesh, m2::Mesh)
@@ -215,6 +222,7 @@ struct GradedMesh{T} <: Mesh{T}
     a::T
     b::T
     amplitude::T
+    y::Vector{T}
 
     function GradedMesh{T}(n::Integer, domain; amplitude = 0.12) where {T}
         d = _interval(domain)
@@ -224,7 +232,8 @@ struct GradedMesh{T} <: Mesh{T}
         abs(amplitude) < 1 || throw(ArgumentError(
             "the grading amplitude must satisfy |a| < 1 for the map to stay increasing, " *
             "got amplitude = $(amplitude)"))
-        new{T}(n, a, b, convert(T, amplitude))
+        α = convert(T, amplitude)
+        new{T}(n, a, b, α, _graded_breakpoints(T, n, a, b, α))
     end
 end
 
@@ -233,12 +242,13 @@ function GradedMesh(n::Integer, domain; kwargs...)
 end
 GradedMesh(n::Integer; kwargs...) = GradedMesh(n, 2convert(Float64, π); kwargs...)
 
-function breakpoints(m::GradedMesh{T}) where {T}
-    α = m.amplitude
-    L = m.b - m.a
-    [m.a + L * (s + α * sinpi(2s) / (2convert(T, π)))
-     for s in (T(i - 1) / m.n for i in 1:(m.n + 1))]
+function _graded_breakpoints(::Type{T}, n::Integer, a::T, b::T, α::T) where {T}
+    L = b - a
+    [a + L * (s + α * sinpi(2s) / (2convert(T, π)))
+     for s in (T(i - 1) / n for i in 1:(n + 1))]
 end
+
+breakpoints(m::GradedMesh) = m.y
 
 @doc raw"""
     RandomMesh(n, domain; seed = 1, spread = 0.6)
@@ -261,6 +271,7 @@ struct RandomMesh{T} <: Mesh{T}
     b::T
     seed::UInt
     spread::T
+    y::Vector{T}
 
     function RandomMesh{T}(n::Integer, domain; seed = 1, spread = 0.6) where {T}
         d = _interval(domain)
@@ -269,7 +280,8 @@ struct RandomMesh{T} <: Mesh{T}
         _check_domain(a, b)
         spread ≥ 0 || throw(ArgumentError(
             "the width spread must be non-negative, got spread = $(spread)"))
-        new{T}(n, a, b, convert(UInt, seed), convert(T, spread))
+        s, σ = convert(UInt, seed), convert(T, spread)
+        new{T}(n, a, b, s, σ, _random_breakpoints(T, n, a, b, s, σ))
     end
 end
 
@@ -278,22 +290,25 @@ function RandomMesh(n::Integer, domain; kwargs...)
 end
 RandomMesh(n::Integer; kwargs...) = RandomMesh(n, 2convert(Float64, π); kwargs...)
 
-function breakpoints(m::RandomMesh{T}) where {T}
-    rng = Xoshiro(m.seed)
-    w = [one(T) + m.spread * rand(rng, T) for _ in 1:m.n]
-    w .*= (m.b - m.a) / sum(w)
-    y = Vector{T}(undef, m.n + 1)
-    y[1] = m.a
-    for i in 2:m.n
+function _random_breakpoints(::Type{T}, n::Integer, a::T, b::T, seed::UInt,
+        spread::T) where {T}
+    rng = Xoshiro(seed)
+    w = [one(T) + spread * rand(rng, T) for _ in 1:n]
+    w .*= (b - a) / sum(w)
+    y = Vector{T}(undef, n + 1)
+    y[1] = a
+    for i in 2:n
         y[i] = y[i - 1] + w[i - 1]
     end
     # The last breakpoint is set rather than accumulated, so that it is the right endpoint
     # exactly and not to within the rounding of n additions. A basis whose knot vector ends
     # a few eps short of b evaluates to zero at b, which is a wrong answer at exactly the
     # point a clamped basis is meant to be interpolatory.
-    y[end] = m.b
+    y[end] = b
     return y
 end
+
+breakpoints(m::RandomMesh) = m.y
 
 @doc raw"""
     GeneralMesh(breakpoints)

@@ -108,9 +108,10 @@ using Test
         @test ndims(op) == 2
         @test size(op) == (nbasis(B), nbasis(B))
         @test length(mass_factors(op)) == 2
-        # the periodic uniform axis takes the Fourier path, the clamped one does not
+        # each axis keeps its own representation: the periodic uniform one takes the Fourier
+        # path, the clamped one the banded Cholesky
         @test mass_factors(op)[1] isa CirculantMass
-        @test mass_factors(op)[2] isa FactorizedMass
+        @test mass_factors(op)[2] isa BandedMass
 
         Mdense = Matrix(op)
         @test Mdense ≈ kron(Matrix(mass_matrix(mass_factors(op)[2])),
@@ -238,6 +239,35 @@ using Test
         # ∫ ∂₁(φ_i(x)φ_j(y)) dx dy = [φ_i]₀¹ ∫φ_j, so only the two end rows are nonzero
         @test maximum(abs, G[2:(end - 1), :]) < 1e-12
         @test maximum(abs, G[1, :]) > 1e-3
+    end
+
+    @testset "$(rpad("contract does not consume its sample",76))" begin
+        # The weights are applied in place, so `contract` must copy first. It did not: when
+        # the sample was already an `Array` of the working element type the conversion was
+        # the identity, and the caller's array came back scaled by the quadrature weights.
+        # The visible symptom was that a second projection of the same array gave a
+        # different answer -- and `quadrature_sample` returns exactly such an array.
+        B = BSplineBasis(UniformMesh(8, 0 .. 1), 3) ⊗
+            BSplineBasis(UniformMesh(6, 0 .. 1), 2)
+        q = TensorProductQuadrature(B)
+
+        F = quadrature_sample(q, x -> sin(x[1]) * x[2])
+        F₀ = copy(F)
+        contract(q, F)
+        @test F == F₀
+
+        @test l2_projection(q, F) ≈ l2_projection(q, F)
+        @test F == F₀
+
+        û = zeros(size(B)...)
+        l2_projection!(û, q, F)
+        @test F == F₀
+
+        # an integer sample is promoted and must be left alone just the same
+        G = ones(Int, quadrature_grid_size(q)...)
+        G₀ = copy(G)
+        contract(q, G)
+        @test G == G₀
     end
 
     @testset "$(rpad("dimension mismatches are reported",76))" begin

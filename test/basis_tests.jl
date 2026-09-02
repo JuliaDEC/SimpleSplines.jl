@@ -184,6 +184,49 @@ using Test
         end
     end
 
+    @testset "$(rpad("evaluating a spline uses the local block",76))" begin
+        # `evaluate(b, û, x)` sums the local block rather than the whole basis. The two
+        # agree wherever the spline is defined, and the local path must not extrapolate:
+        # outside a bounded domain `findcell` clamps and de Boor would happily continue the
+        # nearest cell's polynomial, where the answer is zero.
+        for p in 0:4, bc in (Free(), Dirichlet(), Neumann(), Periodic())
+
+            # a condition involving D^k with k > p constrains nothing and is rejected
+            p < constraint_order(bc) && continue
+            b = BSplineBasis(UniformMesh(16, 0 .. 1), p, bc)
+            û = randn(nbasis(b))
+            reference(x, d) = sum(û[j] * evaluate(b, j, x, d) for j in eachindex(û))
+
+            # Relative, at the same 1e-9 scale the testset above uses for `evaluate_all!`
+            # against `_bspline`: the two sides evaluate each basis function by the two
+            # different recursions, and then sum a different number of terms, so they agree
+            # to a few ULP of a value whose size is set by `randn` and by the length of the
+            # sum rather than to any fixed absolute figure. The `atol` is the floor for the
+            # points where cancellation makes a relative comparison meaningless. A real
+            # indexing fault moves this by O(1), not by 1e-13.
+            for x in (0.0, 0.019, 0.25, 0.5, 0.5 + eps(), 0.937, 1.0), d in 0:min(p, 2)
+
+                @test isapprox(evaluate(b, û, x, d), reference(x, d);
+                    rtol = 1e-9, atol = 1e-12)
+            end
+        end
+
+        for bc in (Free(), Dirichlet(), Neumann())
+            b = BSplineBasis(UniformMesh(16, 0 .. 1), 3, bc)
+            û = randn(nbasis(b))
+            for x in (-1.0, -1e-9, 1 + 1e-9, 2.0)
+                @test evaluate(b, û, x) == 0
+            end
+        end
+
+        # a periodic basis takes any real argument and is the periodic extension
+        bp = BSplineBasis(UniformMesh(16, 0 .. 1), 3, Periodic())
+        v̂ = randn(nbasis(bp))
+        for x in (-2.3, -0.1, 0.4, 1.7, 5.0)
+            @test evaluate(bp, v̂, x) ≈ evaluate(bp, v̂, mod(x, 1.0))
+        end
+    end
+
     @testset "$(rpad("local evaluation is allocation-free",76))" begin
         b = BSplineBasis(UniformMesh(32, -10 .. 10), 3)
         buf = zeros(4)
@@ -267,13 +310,15 @@ using Test
             @test sum(w) ≈ domainlength(b)
         end
 
-        # circulance is a property of the basis, not of the mesh: only the periodic basis on
-        # a uniform mesh gets the Fourier representation
+        # the representation is a property of the basis, not of the mesh: only the periodic
+        # basis on a uniform mesh gets the Fourier one, and only a periodic basis on any
+        # other mesh is left with the sparse Cholesky -- a bounded basis has no seam, so its
+        # mass matrix is banded outright
         @test mass_operator(SplineQuadrature(BSplineBasis(m, 3, Periodic()))) isa
               CirculantMass
-        @test mass_operator(SplineQuadrature(BSplineBasis(m, 3))) isa FactorizedMass
+        @test mass_operator(SplineQuadrature(BSplineBasis(m, 3))) isa BandedMass
         @test mass_operator(SplineQuadrature(BSplineBasis(m, 3, Dirichlet()))) isa
-              FactorizedMass
+              BandedMass
         @test mass_operator(SplineQuadrature(
             BSplineBasis(GradedMesh(12, 0 .. 1), 3, Periodic()))) isa FactorizedMass
     end

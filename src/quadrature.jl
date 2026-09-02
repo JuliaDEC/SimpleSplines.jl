@@ -95,10 +95,11 @@ true
 
 # Storage
 
-`Φ` is stored densely, `N` by `n * nq`. Only the entries inside each basis function's
-support of `p+1` cells are ever nonzero and only those are computed, but keeping the array
-dense lets the contractions above run as one BLAS call, which is the faster arrangement at
-the sizes these discretisations are used at.
+`Φ` is a `SparseMatrixCSC`, `N` by `n * nq`, one per derivative order. Only the entries inside
+each basis function's support of `p+1` cells are ever nonzero, and only those are stored: the
+structurally nonzero count per row is `(p+1) * nq` rather than `n * nq`, which is what keeps
+the contraction ``\Phi \, \mathrm{diag}(f \odot w) \, \Phi^T`` proportional to `N p` instead
+of `N²`.
 
 !!! warning "One quadrature per thread"
     A `SplineQuadrature` carries mutable state behind an otherwise read-only interface:
@@ -386,10 +387,11 @@ end
 
 In-place [`l2_projection`](@ref), writing the coefficients into `û`.
 
-On a [`UniformMesh`](@ref) this allocates nothing: the ``f \odot w`` product goes into a
-buffer held by the quadrature, the load vector is formed with `mul!` straight into `û`, and
-the [`CirculantMass`](@ref) solve is itself allocation-free. On a non-uniform mesh the
-CHOLMOD solve still allocates a temporary, as [`mass_solve!`](@ref) notes.
+This allocates nothing on every basis but one: the ``f \odot w`` product goes into a buffer
+held by the quadrature, the load vector is formed with `mul!` straight into `û`, and both the
+[`CirculantMass`](@ref) and the [`BandedMass`](@ref) solve are themselves allocation-free.
+The exception is a periodic basis on a non-uniform mesh, where the [`FactorizedMass`](@ref)
+solve still allocates a CHOLMOD temporary, as [`mass_solve!`](@ref) notes.
 
 A sample whose element type is wider than the quadrature's — a complex `f` — gets its own
 product instead of being narrowed into that buffer, so this method accepts exactly what

@@ -72,6 +72,7 @@ struct RecombinedBSplineBasis{T, PT <: BSplineBasis{T}, BCL, BCR} <: AbstractBSp
     R::SparseMatrixCSC{T, Int}
     firstcol::Vector{Int}
     lastcol::Vector{Int}
+    width::Int
 
     function RecombinedBSplineBasis(parent::PT,
             left::BCL,
@@ -100,13 +101,18 @@ struct RecombinedBSplineBasis{T, PT <: BSplineBasis{T}, BCL, BCR} <: AbstractBSp
 
         R, firstcol, lastcol = _recombination(parent, left, right)
 
-        new{T, PT, BCL, BCR}(parent, left, right, R, firstcol, lastcol)
+        # The local block width is a constant of the basis and `evaluate_all!` needs it on
+        # every call, so it is computed here rather than by a maximum over all cells each
+        # time -- which made the recombined particle path O(ncells) per point.
+        width = maximum(lastcol[c] - firstcol[c] + 1 for c in eachindex(firstcol))
+
+        new{T, PT, BCL, BCR}(parent, left, right, R, firstcol, lastcol, width)
     end
 end
 
 # a_i = (L φ_i)(x) for the block of parent functions the condition can reach.
 function _constraint_values(parent::BSplineBasis{T}, bc::BoundaryCondition, x,
-        block::AbstractVector{Int}) where {T}
+        block::AbstractVector{<:Integer}) where {T}
     c = constraint_coefficients(bc)
     [sum(c[k + 1] * evaluate(parent, i, x, k) for k in 0:(length(c) - 1); init = zero(T))
      for i in block]
@@ -137,7 +143,7 @@ function _recombination(parent::BSplineBasis{T}, left::BoundaryCondition,
     col = 0
 
     if ncL > 0
-        aL = _constraint_values(parent, left, a, collect(1:(mL + 1)))
+        aL = _constraint_values(parent, left, a, 1:(mL + 1))
         anchor = aL[end]
         for t in 1:mL
             col += 1
@@ -158,7 +164,7 @@ function _recombination(parent::BSplineBasis{T}, left::BoundaryCondition,
     end
 
     if ncR > 0
-        aR = _constraint_values(parent, right, b, collect((Np - mR):Np))
+        aR = _constraint_values(parent, right, b, (Np - mR):Np)
         anchor = aR[begin]
         for s in 2:(mR + 1)
             col += 1
@@ -180,21 +186,20 @@ function _recombination(parent::BSplineBasis{T}, left::BoundaryCondition,
     # silently drop a contribution. The result really is contiguous — the columns are ordered
     # left block, pass-through, right block, which is monotone in parent-row position — and
     # the test suite checks it against `evaluate` at every degree and condition.
+    #
+    # Inverted: rather than scanning every nonzero once per cell, which is O(n · nnz), each
+    # nonzero is visited once and the cells it can reach are updated. Parent row i is nonzero
+    # on cells i-p .. i, clipped to 1:n.
     rows = rowvals(R)
-    firstcol = Vector{Int}(undef, n)
-    lastcol = Vector{Int}(undef, n)
-    for c in 1:n
-        lo, hi = N + 1, 0
-        for j in 1:N, t in nzrange(R, j)
+    firstcol = fill(N + 1, n)
+    lastcol = fill(0, n)
+    for j in 1:N, t in nzrange(R, j)
 
-            i = rows[t]
-            if c ≤ i ≤ c + p
-                lo = min(lo, j)
-                hi = max(hi, j)
-            end
+        i = rows[t]
+        for c in max(1, i - p):min(n, i)
+            firstcol[c] = min(firstcol[c], j)
+            lastcol[c] = max(lastcol[c], j)
         end
-        firstcol[c] = lo
-        lastcol[c] = hi
     end
 
     return R, firstcol, lastcol
@@ -273,9 +278,7 @@ function _greville_from_columns(b::RecombinedBSplineBasis{T}) where {T}
 end
 
 _local_width(b::AbstractBSplineBasis) = degree(b) + 1
-function _local_width(b::RecombinedBSplineBasis)
-    maximum(b.lastcol[c] - b.firstcol[c] + 1 for c in 1:ncells(b))
-end
+_local_width(b::RecombinedBSplineBasis) = b.width
 
 """
     local_width(b::AbstractBSplineBasis)
