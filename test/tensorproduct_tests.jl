@@ -33,6 +33,18 @@ using Test
         # a one-factor product is legal and behaves like the axis it wraps
         @test ndims(TensorProductBasis(bx)) == 1
         @test_throws ArgumentError TensorProductBasis()
+
+        # `kron` has no one-argument method, so assembling a one-factor product by splatting
+        # into it threw. Nothing else in the suite builds a quadrature on a `D = 1` basis.
+        B1 = TensorProductBasis(BSplineBasis(UniformMesh(7, 0 .. 1), 3))
+        op1 = mass_operator(TensorProductQuadrature(B1))
+        @test mass_matrix(op1) == mass_matrix(only(mass_factors(op1)))
+        @test Matrix(op1) == Matrix(mass_matrix(op1))
+
+        # `size(op, d)` answers like `Base` at both ends of the range
+        @test size(op1, 1) == size(op1, 2) == prod(size(B1))
+        @test size(op1, 3) == 1
+        @test_throws BoundsError size(op1, 0)
     end
 
     @testset "$(rpad("domain is a DomainSets product",76))" begin

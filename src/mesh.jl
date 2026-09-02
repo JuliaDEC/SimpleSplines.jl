@@ -107,7 +107,11 @@ Base.hash(m::Mesh, h::UInt) = hash(breakpoints(m), hash(domain(m), h))
 function Base.:(==)(m1::Mesh, m2::Mesh)
     (domain(m1) == domain(m2) && breakpoints(m1) == breakpoints(m2))
 end
-Base.isequal(m1::Mesh{T1}, m2::Mesh{T2}) where {T1, T2} = (T1 == T2 && m1 == m2)
+# `==` above is geometric, but the mesh *type* selects the assembly path: an equally spaced
+# `GeneralMesh` deliberately does not take the `CirculantMass` route that the `UniformMesh`
+# with the same breakpoints does. `isequal` is therefore type-aware, so the two do not
+# collide as dictionary keys; `hash` stays geometric, which `isequal ⟹ hash` still permits.
+Base.isequal(m1::Mesh, m2::Mesh) = (typeof(m1) == typeof(m2) && m1 == m2)
 function Base.isapprox(m1::Mesh, m2::Mesh; kwargs...)
     (isapprox(leftendpoint(domain(m1)), leftendpoint(domain(m2)); kwargs...) &&
      isapprox(rightendpoint(domain(m1)), rightendpoint(domain(m2)); kwargs...) &&

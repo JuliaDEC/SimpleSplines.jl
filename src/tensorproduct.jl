@@ -342,7 +342,10 @@ end
 
 Base.ndims(::KroneckerMass{T, D}) where {T, D} = D
 Base.size(op::KroneckerMass) = (prod(op.dims), prod(op.dims))
-Base.size(op::KroneckerMass, d::Integer) = d ≤ 2 ? prod(op.dims) : 1
+function Base.size(op::KroneckerMass, d::Integer)
+    d ≥ 1 || throw(BoundsError(size(op), d))
+    d ≤ 2 ? prod(op.dims) : 1
+end
 
 """
     mass_matrix(op::KroneckerMass)
@@ -353,7 +356,11 @@ Formed on demand and **not** stored: it is what the representation exists to avo
 three dimensions it will not fit. Provided so that a test can check the factored solve
 against the dense one at a size where both are possible.
 """
-mass_matrix(op::KroneckerMass) = kron(reverse(map(mass_matrix, op.ops))...)
+function mass_matrix(op::KroneckerMass)
+    # `foldl` rather than a splat into `kron`: a one-factor product is legal, and `kron` has
+    # no one-argument method, so splatting it threw a `MethodError` for `D = 1`.
+    foldl(kron, reverse(map(mass_matrix, op.ops)))
+end
 Base.Matrix(op::KroneckerMass) = Matrix(mass_matrix(op))
 
 """

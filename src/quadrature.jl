@@ -338,7 +338,8 @@ function weighted_matrix(q::SplineQuadrature, f::AbstractVector, a::Integer, b::
     length(f) == length(q.x) || throw(DimensionMismatch(
         "the coefficient was sampled at $(length(f)) points but the quadrature has " *
         "$(length(q.x))"))
-    basis_values(q, a) * Diagonal(f .* q.w) * basis_values(q, b)'
+    A = basis_values(q, a) * Diagonal(f .* q.w) * basis_values(q, b)'
+    SparseMatrixCSC{eltype(q), Int}(A)
 end
 
 @doc raw"""

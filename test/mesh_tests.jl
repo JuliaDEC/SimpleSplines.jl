@@ -109,5 +109,15 @@ using Test
         # a GeneralMesh with the same breakpoints compares equal to the uniform one, since
         # equality is about the subdivision and not about which family produced it
         @test GeneralMesh(breakpoints(UniformMesh(8, 0 .. 1))) == UniformMesh(8, 0 .. 1)
+
+        # `isequal` is not, because the mesh type selects the assembly path: an equally
+        # spaced GeneralMesh deliberately takes the general route where the UniformMesh
+        # takes the circulant one, so the two must not collide as dictionary keys
+        mu = UniformMesh(8, 0 .. 1)
+        mg = GeneralMesh(breakpoints(mu))
+        @test !isequal(mg, mu)
+        @test length(Set([mu, mg])) == 2
+        @test isequal(mg, GeneralMesh(breakpoints(mu)))
+        @test mg ≈ mu
     end
 end

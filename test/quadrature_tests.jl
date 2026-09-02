@@ -136,6 +136,8 @@ using Test
         @test weighted_matrix(q, sin, 0, 1) ≈
               weighted_matrix(q, sin.(quadrature_nodes(q)), 0, 1)
         @test_throws DimensionMismatch weighted_matrix(q, [1.0, 2.0], 0, 1)
+        # the same contraction as `mixed_matrix`, so the same concrete return type
+        @test typeof(weighted_matrix(q, one, 0, 1)) == typeof(mixed_matrix(q, 0, 1))
         # against a direct quadrature of int sin(x) phi_k phi_l
         Φ = basis_values(q, 0)
         w = quadrature_weights(q)

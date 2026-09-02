@@ -106,6 +106,15 @@ using Test
         # too few functions for both ends
         @test_throws ArgumentError BSplineBasis(UniformMesh(1, 0 .. 1), 0, Dirichlet())
 
+        # The end blocks are disjoint here, but the constraints still consume every function
+        # and leave a basis spanning {0} -- which answered the whole interface silently.
+        @test_throws ArgumentError BSplineBasis(UniformMesh(1, 0 .. 1), 1, Dirichlet())
+        @test_throws ArgumentError BSplineBasis(UniformMesh(2, 0 .. 1), 0, Dirichlet())
+        @test_throws ArgumentError BSplineBasis(UniformMesh(1, 0 .. 1), 0,
+            (Dirichlet(), Free()))
+        # one function survives, so this is the smallest basis that is still legal
+        @test nbasis(BSplineBasis(UniformMesh(3, 0 .. 1), 0, Dirichlet())) == 1
+
         # Periodic is not a condition on an end. It imposes no local constraint, so without
         # the check it would recombine as Free does and give back the clamped basis under a
         # name saying it is periodic.

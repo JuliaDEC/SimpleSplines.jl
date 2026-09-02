@@ -159,7 +159,13 @@ On a [`TensorProductBasis`](@ref) an integer `k` selects the ``k``-th partial de
 """
 derivative(s::Spline, d = 1) = SplineDerivative(s, d)
 
-function derivative(s::Spline{T, <:TensorProductBasis{T, D}}, k::Integer) where {T, D}
+function derivative(s::Spline{<:Any, <:TensorProductBasis{<:Any, D}}, k::Integer) where {D}
+    # `Spline`'s first parameter is `promote_type(eltype(basis), eltype(coefficients))`, so
+    # binding it to the basis element type as well would silently miss this method whenever
+    # the coefficients are wider than the basis, leaving the bare integer in the tuple slot.
+    1 ≤ k ≤ D || throw(ArgumentError(
+        "a $(D)-dimensional spline has no axis $(k); `derivative(s, k)` selects the " *
+        "k-th partial derivative and needs `1 ≤ k ≤ $(D)`"))
     SplineDerivative(s, ntuple(i -> i == k ? 1 : 0, D))
 end
 

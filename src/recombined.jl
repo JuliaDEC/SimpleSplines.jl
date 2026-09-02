@@ -62,9 +62,12 @@ the constants survive.
 
 # Requirements
 
-The two end blocks must not overlap: `nbasis(parent) > m_left + m_right + 1`. The order of
-each condition must be at most the degree. [`Periodic`](@ref) is a condition on the axis
-rather than on an end and is rejected here, as it is by [`boundary_conditions`](@ref).
+The two end blocks must not overlap: `nbasis(parent) > m_left + m_right + 1`. Enough
+functions must survive to span something: `nbasis(parent) - nconstraints(left) -
+nconstraints(right) ≥ 1`, which is a separate requirement because a constrained end costs
+one degree of freedom whatever the order of its condition. The order of each condition must
+be at most the degree. [`Periodic`](@ref) is a condition on the axis rather than on an end
+and is rejected here, as it is by [`boundary_conditions`](@ref).
 """
 struct RecombinedBSplineBasis{T, PT <: BSplineBasis{T}, BCL, BCR} <: AbstractBSplineBasis{T}
     parent::PT
@@ -107,6 +110,15 @@ struct RecombinedBSplineBasis{T, PT <: BSplineBasis{T}, BCL, BCR} <: AbstractBSp
         Np > mL + mR + 1 || throw(ArgumentError(
             "a degree-$(p) basis on $(ncells(parent)) cells has only $(Np) functions, too " *
             "few to impose $(left) on the left and $(right) on the right; refine the mesh"))
+
+        # Disjointness is not enough on its own: each constrained end costs one degree of
+        # freedom, so the two together can consume the whole parent and leave a basis
+        # spanning {0}, which answers the entire interface while reproducing nothing.
+        N = Np - nconstraints(left) - nconstraints(right)
+        N ≥ 1 || throw(ArgumentError(
+            "a degree-$(p) basis on $(ncells(parent)) cells has $(Np) functions, and " *
+            "imposing $(left) on the left and $(right) on the right removes $(Np - N) of " *
+            "them, leaving a basis with no functions at all; refine the mesh"))
 
         R, firstcol, lastcol = _recombination(parent, left, right)
 

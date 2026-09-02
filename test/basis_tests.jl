@@ -351,6 +351,26 @@ Base.IndexStyle(::Type{<:ShiftedVector}) = IndexLinear()
             BSplineBasis(UniformMesh(16, 0 .. 1), 3), zeros(3), xs)
     end
 
+    @testset "$(rpad("derivative(::Spline, ::Integer) on a tensor product",76))" begin
+        B = BSplineBasis(UniformMesh(6, 0 .. 1), 3) ⊗
+            BSplineBasis(UniformMesh(5, 0 .. 1), 3)
+
+        # `Spline`'s element type is the promotion of basis and coefficients, so complex
+        # coefficients on a real basis used to miss the axis-selecting method entirely: the
+        # fallback stored the bare integer and the result was not callable.
+        for û in (randn(size(B)...), ComplexF64.(randn(size(B)...)))
+            s = Spline(B, û)
+            @test derivative(s, 1).d == (1, 0)
+            @test derivative(s, 2).d == (0, 1)
+            @test derivative(s, 2)((0.3, 0.4)) ≈ evaluate(B, û, (0.3, 0.4), (0, 1))
+        end
+
+        # an axis that does not exist gave the zeroth derivative rather than an error
+        s = Spline(B, randn(size(B)...))
+        @test_throws ArgumentError derivative(s, 0)
+        @test_throws ArgumentError derivative(s, 3)
+    end
+
     @testset "$(rpad("local evaluation is allocation-free",76))" begin
         b = BSplineBasis(UniformMesh(32, -10 .. 10), 3)
         buf = zeros(4)

@@ -161,6 +161,42 @@ of the array it was planned for, not merely its alignment — so the `CirculantM
 such a fibre outright with "plan applied to wrong-strides array". Creating the plans `UNALIGNED`,
 which is what lets them accept a *contiguous* column view, does not help.
 
+#### Argument and dispatch holes closed after review
+
+Five defects found by review rather than by the suite, all in exported API and none of them
+visible to the 63 875 assertions that were passing at the time.
+
+`mass_matrix` and `Matrix` of a `KroneckerMass` threw `MethodError` on a one-factor product.
+The assembly splatted into `kron`, which has no one-argument method, so a `D = 1`
+`TensorProductBasis` — explicitly legal, and constructed by the suite — could be solved with
+but not assembled. Nothing else built a `TensorProductQuadrature` on one axis.
+
+`derivative(s, k)` on a tensor-product `Spline` silently did the wrong thing whenever the
+coefficients were wider than the basis. `Spline`'s element type is the promotion of the two,
+so binding it to the basis type as well made the axis-selecting method unreachable for, say,
+complex coefficients on a real basis: the fallback stored the bare integer `k` in the
+derivative slot and the result raised `MethodError` when called. An out-of-range `k` now
+throws instead of returning the zeroth derivative.
+
+`RecombinedBSplineBasis` built a basis with **no functions at all** rather than refusing.
+The existing guard enforced that the two end blocks stay disjoint, which is a weaker
+requirement than the result spanning something: each constrained end costs one degree of
+freedom, so `BSplineBasis(UniformMesh(1, 0 .. 1), 1, Dirichlet())` produced a basis of
+dimension zero that answered the whole interface and reproduced nothing. Both conditions are
+now checked, and the docstring states them separately.
+
+`isequal` on a `Mesh` is now type-aware. `==` remains geometric — the domain and the
+breakpoints, not the family that produced them — but the mesh *type* selects the assembly
+path, an equally spaced `GeneralMesh` deliberately taking the general route where the
+`UniformMesh` with identical breakpoints takes the circulant one. The two therefore no longer
+collide as dictionary keys. `hash` stays geometric, which the `isequal ⟹ hash` contract
+permits.
+
+Two smaller ones: `size(::KroneckerMass, d)` answered for `d ≤ 0` where `Base` throws, and
+`weighted_matrix` returned whatever its triple product produced while `mixed_matrix`,
+documented as the same contraction, narrowed to `SparseMatrixCSC{eltype(q), Int}`. Both now
+match `Base` and each other.
+
 ### Periodic B-spline finite elements
 
 The package now provides one basis and one assembly table built on it.
