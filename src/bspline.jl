@@ -153,7 +153,10 @@ This is what keeps [`evaluate_all!`](@ref) allocation-free, `findcell` being on 
 loop of a particle deposition where one allocation per particle per step is the whole cost of
 the routine. [`UniformMesh`](@ref) still builds its vector on demand, its breakpoints being a
 closed form and its own `findcell` a division that needs none of them; the other mesh families
-hold theirs.
+hold theirs, and for those the basis and the mesh share one array.
+
+As for a mesh, the result must not be mutated: it is the basis's own storage, and where the
+mesh stores its breakpoints too it is the mesh's as well.
 """
 breakpoints(b::AbstractBSplineBasis) = b.breaks
 
@@ -604,12 +607,6 @@ end
 # `AbstractVector` and the buffer escapes into it either way.
 function _evaluate_block!(values::AbstractVector{R}, b::AbstractBSplineBasis,
         û::AbstractVector, x::Number, d::Integer) where {R}
-    # Outside the domain of a bounded basis the spline is zero, as the docstring above says.
-    # The local path cannot discover that on its own: `findcell` clamps to the nearest cell
-    # and de Boor's recursion would then extrapolate that cell's polynomial. A periodic basis
-    # reduces its argument instead, so for it every real `x` is inside.
-    _inside(b, x) || return zero(R)
-
     j₀ = evaluate_all!(values, b, x, d)
 
     v = zero(R)
@@ -635,7 +632,10 @@ function evaluate(b::AbstractBSplineBasis{T}, û::AbstractVector{S}, X::Abstract
     # allocation of the call.
     values = Vector{R}(undef, local_width(b))
     out = Vector{R}(undef, length(X))
-    for (i, x) in pairs(X)
+    # `enumerate`, not `pairs`: the counter has to index `out`, whose axes are `1:length(X)`
+    # whatever the axes of `X` are. `pairs` yields the keys of `X`, which for an
+    # offset-axis vector are not indices of `out` at all.
+    for (i, x) in enumerate(X)
         out[i] = _evaluate_block!(values, b, û, x, d)
     end
     return out
@@ -733,6 +733,12 @@ particle and a loop over the whole basis.
     it through [`basis_index`](@ref), which wraps where the basis is periodic and is the
     identity where it is not.
 
+Outside the domain of a bounded basis `values` is filled with zeros, matching [`evaluate`](@ref)
+one index at a time, so the deposition above adds nothing for a particle that has left the
+domain rather than depositing an extrapolated polynomial. On a
+[`PeriodicBSplineBasis`](@ref) every real `x` is reduced onto the domain first and no point is
+outside.
+
 # Method
 
 De Boor's triangular scheme evaluates the `q+1` nonzero splines of degree ``q = p - d`` on
@@ -762,6 +768,19 @@ function evaluate_all!(values::AbstractVector{R}, b::AbstractBSplineBasis, x::Nu
     c = findcell(b, x̃)
     k = _spanindex(b, c)
     kv = knotvector(b)
+
+    if !_inside(b, x)
+        # Outside the domain of a bounded basis every basis function vanishes, so the whole
+        # block is zero. The local path cannot discover that from `c` alone: `findcell`
+        # clamps to the nearest cell, and de Boor's scheme below would then evaluate that
+        # cell's polynomial at a point outside it -- an extrapolation, not the value. A
+        # periodic basis reduces its argument, so for it every real `x` is inside.
+        #
+        # The cell index is still the clamped one, so a deposition loop indexes the same
+        # block it would for a point just inside and adds zero to it.
+        fill!(values, zero(R))
+        return _firstindex(b, c)
+    end
 
     if d > p
         # Every derivative above the degree vanishes identically. Returning zeros rather

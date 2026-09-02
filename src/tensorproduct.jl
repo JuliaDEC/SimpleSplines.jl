@@ -381,8 +381,12 @@ end
 # of the array it was planned for, not merely its alignment -- so the plan behind a
 # `CirculantMass` rejects such a fibre outright with "plan applied to wrong-strides array".
 # Creating the plans UNALIGNED, which is what lets them accept a *contiguous* column view,
-# does not help here. The buffers are allocated per axis and reused across that axis's fibres,
-# which keeps the operator itself stateless and therefore usable from several threads at once.
+# does not help here. The two buffers are allocated once per axis and reused across that
+# axis's fibres, so the cost is O(D) buffers per call rather than one pair per fibre.
+#
+# This adds no shared state of its own -- both buffers are local to the call -- but that is
+# not thread safety: a `CirculantMass` holds its own scratch vector, which `mass_solve!`
+# writes, so two threads applying the same operator would collide inside it.
 #
 # `f!` receives (out, op, in) with two *distinct* buffers, so a method that cannot alias its
 # arguments -- `mul!` -- needs no defensive copy of its own.

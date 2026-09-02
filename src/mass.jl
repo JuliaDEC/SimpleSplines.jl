@@ -288,8 +288,7 @@ whose mass matrix has no seam to wrap across.
     every basis function is a translate of one cardinal spline, which needs the *periodic*
     closure as well: a clamped basis on a uniform mesh has ``p`` boundary functions at each
     end that are not translates of anything, and its mass matrix is banded but not circulant.
-    Dispatching on the mesh alone — as an earlier version of this function did, when the
-    periodic basis was the only one — would take the Fourier path for a clamped basis and get
+    Dispatching on the mesh alone would take the Fourier path for a clamped basis and get
     wrong answers everywhere except in [`CirculantMass`](@ref)'s own verification, which
     would reject it.
 """

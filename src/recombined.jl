@@ -187,8 +187,8 @@ function _recombination(parent::BSplineBasis{T}, left::BoundaryCondition,
     # left block, pass-through, right block, which is monotone in parent-row position — and
     # the test suite checks it against `evaluate` at every degree and condition.
     #
-    # Inverted: rather than scanning every nonzero once per cell, which is O(n · nnz), each
-    # nonzero is visited once and the cells it can reach are updated. Parent row i is nonzero
+    # Each nonzero is visited once and the cells it can reach are updated, rather than every
+    # nonzero being scanned once per cell, which would be O(n · nnz). Parent row i is nonzero
     # on cells i-p .. i, clipped to 1:n.
     rows = rowvals(R)
     firstcol = fill(N + 1, n)

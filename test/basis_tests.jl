@@ -3,6 +3,19 @@ using LinearAlgebra
 using Random
 using Test
 
+# A vector whose axes do not start at 1, so that the sweep over a vector of points is tested
+# against one. Written out here rather than taken from OffsetArrays, which is not a dependency
+# of this package and would be one for four lines.
+struct ShiftedVector{T} <: AbstractVector{T}
+    data::Vector{T}
+    offset::Int
+end
+
+Base.size(v::ShiftedVector) = size(v.data)
+Base.axes(v::ShiftedVector) = (v.offset .+ axes(v.data, 1),)
+Base.getindex(v::ShiftedVector, i::Int) = v.data[i - v.offset]
+Base.IndexStyle(::Type{<:ShiftedVector}) = IndexLinear()
+
 @testset "$(rpad("Clamped and Recombined Basis Tests",80))" begin
     @testset "$(rpad("clamped: dimension, partition of unity, endpoints",76))" begin
         for p in 0:5, n in max(1, p):8
@@ -184,6 +197,90 @@ using Test
         end
     end
 
+    @testset "$(rpad("the local block is zero outside the domain",76))" begin
+        # `findcell` clamps to the nearest cell, so de Boor's scheme would evaluate that
+        # cell's polynomial at a point outside it -- an extrapolation, and O(1) wrong rather
+        # than slightly wrong: on a degree-3 basis on 0 .. 1 the block at x = -0.5 came out
+        # as [125.0, -196.0, 82.67, -10.67] against the correct zero. This is the property
+        # every caller of `evaluate_all!` depends on, `evaluate(b, û, x)` and the
+        # tensor-product paths among them, so it is checked here at the root.
+        meshes = [UniformMesh(9, -1 .. 2), GradedMesh(9, -1 .. 2), RandomMesh(9, -1 .. 2),
+            GeneralMesh([-3.0, -1.0, -0.5, 0.0, 0.7, 1.0, 2.0, 5.0])]
+        for m in meshes, p in 0:4
+
+            for bc in (Free(), Dirichlet(), Neumann(), Natural(), Robin(1.0, 2.0),
+                Constraint(1, -2))
+                p < constraint_order(bc) && continue
+                b = BSplineBasis(m, p, bc)
+                a, z = first(m), last(m)
+                buf = zeros(local_width(b))
+                for d in 0:p,
+                    x in (a - 1e-9, a - 0.5, a - 100.0, z + 1e-9, z + 0.5,
+                        z + 100.0)
+
+                    j₀ = evaluate_all!(buf, b, x, d)
+                    @test all(iszero, buf)
+                    # the reference recursion agrees, which is what makes zero the right
+                    # answer rather than merely the convenient one
+                    @test all(evaluate(b, j, x, d) == 0 for j in eachindex(b))
+                    # and the documented deposition recipe therefore adds nothing, which is
+                    # the property a particle loop actually depends on
+                    coeffs = zeros(nbasis(b))
+                    for t in eachindex(buf)
+                        j = basis_index(b, j₀ + t - 1)
+                        1 ≤ j ≤ nbasis(b) || continue
+                        coeffs[j] += buf[t]
+                    end
+                    @test all(iszero, coeffs)
+                end
+
+                # the closed domain belongs to the basis: both endpoints are inside, so the
+                # guard must not swallow the interpolatory value there
+                for d in 0:p, x in (a, z)
+
+                    j₀ = evaluate_all!(buf, b, x, d)
+                    ref = map(1:local_width(b)) do t
+                        j = basis_index(b, j₀ + t - 1)
+                        1 ≤ j ≤ nbasis(b) ? evaluate(b, j, x, d) : 0.0
+                    end
+                    @test isapprox(buf, ref; atol = 1e-9 * max(1, maximum(abs, ref)))
+                end
+            end
+
+            # a periodic basis reduces its argument, so no real point is outside and the
+            # block there is the periodic extension rather than zero
+            p < ncells(m) || continue
+            bp = BSplineBasis(m, p, Periodic())
+            bufp = zeros(local_width(bp))
+            L = last(m) - first(m)
+            for d in 0:p, x in (first(m) - 0.5, last(m) + 0.5, first(m) - 3L)
+
+                j₀ = evaluate_all!(bufp, bp, x, d)
+                ref = zeros(local_width(bp))
+                k₀ = evaluate_all!(ref, bp, first(m) + mod(x - first(m), L), d)
+                @test j₀ == k₀
+                @test bufp == ref
+            end
+        end
+    end
+
+    @testset "$(rpad("out-of-domain evaluation is allocation-free",76))" begin
+        # The guard must not cost the particle loop an allocation, and it is on the path a
+        # straying particle takes every step.
+        b = BSplineBasis(UniformMesh(32, -10 .. 10), 3)
+        buf = zeros(4)
+        evaluate_all!(buf, b, -12.0, 0)                     # warm up
+        evaluate_all!(buf, b, -12.0, 1)
+        @test @allocated(evaluate_all!(buf, b, -12.5, 0)) == 0
+        @test @allocated(evaluate_all!(buf, b, -12.5, 1)) == 0
+        @test @allocated(evaluate_all!(buf, b, 12.5, 0)) == 0
+
+        br = BSplineBasis(UniformMesh(32, -10 .. 10), 3, Dirichlet())
+        bufr = zeros(local_width(br))
+        evaluate_all!(bufr, br, -12.0, 0)
+        @test @allocated(evaluate_all!(bufr, br, -12.5, 0)) == 0
+    end
+
     @testset "$(rpad("evaluating a spline uses the local block",76))" begin
         # `evaluate(b, û, x)` sums the local block rather than the whole basis. The two
         # agree wherever the spline is defined, and the local path must not extrapolate:
@@ -236,6 +333,15 @@ using Test
             @test evaluate(b, û, xs, d) == [evaluate(b, û, x, d) for x in xs]
             @test evaluate(b, û, xs, d) isa Vector{Float64}
         end
+
+        # the sweep counts its own output rather than reusing the keys of `X`, so a vector
+        # whose axes do not start at 1 is evaluated instead of raising a `BoundsError`
+        bo = BSplineBasis(UniformMesh(16, 0 .. 1), 3)
+        ûo = randn(nbasis(bo))
+        Xoff = ShiftedVector(xs, 3)
+        @test axes(Xoff) == (4:(3 + length(xs)),)
+        @test evaluate(bo, ûo, Xoff) == evaluate(bo, ûo, xs)
+        @test axes(evaluate(bo, ûo, Xoff)) == (Base.OneTo(length(xs)),)
 
         # `s(v)` routes to that sweep rather than broadcasting the scalar method
         s = Spline(BSplineBasis(UniformMesh(16, 0 .. 1), 3), randn(19))

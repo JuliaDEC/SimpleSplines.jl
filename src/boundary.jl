@@ -180,13 +180,19 @@ degree-``p`` spline is piecewise constant and everything above it vanishes ident
 struct Constraint{N, T <: Number} <: BoundaryCondition
     c::NTuple{N, T}
 
-    function Constraint(c::NTuple{N, T}) where {N, T <: Number}
-        N ≥ 1 || throw(ArgumentError("a constraint needs at least one coefficient"))
+    # Spelled `Tuple{T, Vararg{T, M}}` rather than `NTuple{N, T}`: the latter admits `N = 0`,
+    # and there is nothing in `()` from which to infer `T`, so `T` would be an unbound type
+    # parameter -- a signature that can only be matched vacuously, which is what Aqua's
+    # `unbound_args` check reports. Requiring one coefficient binds it, and the empty tuple
+    # reaches the method below instead.
+    function Constraint(c::Tuple{T, Vararg{T, M}}) where {T <: Number, M}
         any(!iszero, c) || throw(ArgumentError(
             "a constraint needs at least one nonzero coefficient, got all zeros"))
-        new{N, T}(c)
+        new{M + 1, T}(c)
     end
 end
+
+Constraint(::Tuple{}) = throw(ArgumentError("a constraint needs at least one coefficient"))
 
 Constraint(c::Number...) = Constraint(promote(c...))
 

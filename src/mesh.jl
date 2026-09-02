@@ -47,6 +47,16 @@ The `n+1` breakpoints of `m`, in increasing order, running from ``a`` to ``b`` i
 These are the cell boundaries: cell `k` is `breakpoints(m)[k] .. breakpoints(m)[k+1]`. They
 are to be distinguished from the knot vector of a basis built on `m`, whose entries may
 repeat.
+
+!!! warning "The result must not be mutated"
+    Where a mesh stores its breakpoints — [`GradedMesh`](@ref), [`RandomMesh`](@ref) and
+    [`GeneralMesh`](@ref) — this returns that array itself rather than a copy, which is what
+    keeps `findcell` off the allocator on the innermost loop of a particle deposition.
+    Writing to it corrupts the mesh, and silently: the domain and the cell count are
+    unchanged, so nothing rejects the result, while `hash` and `==` now report a different
+    mesh than before. [`UniformMesh`](@ref) computes its breakpoints from a closed
+    form and so hands back a fresh vector, but that is an implementation detail and not a
+    licence to mutate the result of this function. Take a `copy` if you need to modify it.
 """
 breakpoints(m::Mesh) = error("breakpoints is not implemented for $(typeof(m)).")
 

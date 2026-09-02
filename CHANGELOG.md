@@ -267,7 +267,9 @@ block of `p+1` functions rather than the whole basis, which it did until this wa
 at `N = 1027` a single evaluation cost 24 µs and scaled linearly with `N`. It is now flat in
 `N`, 21.8 ns per point at every size from 64 to 4096 cells. Outside a bounded domain the
 result is still zero, which the local path has to be told, `findcell` clamping to the nearest
-cell where de Boor's recursion would otherwise extrapolate its polynomial.
+cell where de Boor's recursion would otherwise extrapolate its polynomial. That guard sits in
+`evaluate_all!` itself, so every caller of the local block inherits it — the one-dimensional
+sum, the tensor-product one, and a hand-written particle deposition alike.
 
 Evaluating at a *vector* of points shares one block buffer across the sweep, so
 `evaluate(b, û, xs)` — and `s(xs)`, which routes to it — costs 13.6 ns and 8 bytes per point
@@ -321,6 +323,37 @@ the test suite and refuses the push if it fails; `SIMPLESPLINES_SKIP_TESTS=1` ov
 
 Found in review of the branch, not by the suite, and each now has a regression test:
 
+- **`evaluate_all!` extrapolated outside the domain, and so did every tensor-product
+  evaluation.** The guard was on the one-dimensional sum rather than on the block it sums:
+  `findcell` clamps to the nearest cell, so de Boor's scheme evaluated that cell's polynomial
+  at a point outside it. On a degree-3 basis on `0 .. 1` the block at `x = -0.5` came out as
+  `[125.0, -196.0, 82.67, -10.67]` instead of zero, and `evaluate(B, û, x)` on a tensor
+  product reached `-418` where the answer is `0` — in exactly the straying-particle case the
+  `evaluate` docstring names, and with the identity in its own doctest failing off-domain.
+  The guard now sits in `evaluate_all!`, which is the routine that had the fault and the one
+  every other path goes through. It costs nothing measurable: the out-of-domain call is
+  allocation-free and, short-circuiting the recursion, faster than an interior one.
+- **`_apply_along!` claimed the operator was usable from several threads at once.** Its
+  buffers are local to the call, which is not the same thing: a `CirculantMass` holds a
+  scratch vector that `mass_solve!` writes, so two threads applying one operator would
+  collide inside it. The comment now says what the buffers do buy — `O(D)` of them per call
+  rather than one pair per fibre — and nothing more.
+- **`breakpoints` had no documented aliasing contract**, while returning the mesh's own array
+  for `GradedMesh`, `RandomMesh` and `GeneralMesh` and a fresh one for `UniformMesh`. Writing
+  to the result therefore corrupted the mesh on three families out of four, silently: the
+  domain and cell count still agree, so nothing rejects it, but `hash` and `==` then report a
+  different mesh. Returning a copy is not the fix — sharing the array is what keeps `findcell`
+  off the allocator — so the contract is now stated on both `breakpoints` methods, and the
+  uniform case is documented as an implementation detail rather than a licence.
+- **`evaluate(b, û, X)` over a vector of points assumed `X` was 1-based.** It indexed its
+  output with the keys of `X`, so a vector with offset axes raised a `BoundsError` instead of
+  being evaluated. It counts its own output now.
+- **`Constraint`'s inner constructor left a type parameter unbound.** `NTuple{N, T}` admits
+  `N = 0`, where there is nothing in `()` from which to infer `T`; the empty tuple is its own
+  method now, and the general one requires a coefficient. Behaviour is unchanged — both
+  spellings threw the intended `ArgumentError` already, by the order of the checks rather than
+  by construction — but the signature was one Aqua's `unbound_args` check reports, and the
+  suite now runs Aqua.
 - **`contract` consumed the array it was given.** The quadrature weights are applied in
   place, and the copy that was meant to protect the caller was `convert(Array{R}, F)` —
   the *identity* when `F` already has the working element type, which is exactly what

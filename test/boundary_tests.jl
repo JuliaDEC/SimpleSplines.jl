@@ -34,6 +34,9 @@ using Test
         @test_throws ArgumentError Robin(0, 0)
         @test_throws ArgumentError Constraint(0, 0)
         @test_throws ArgumentError Constraint(0.0)
+        # no coefficients at all: its own method, because `NTuple{0,T}` cannot bind `T`
+        @test_throws ArgumentError Constraint()
+        @test_throws ArgumentError Constraint(())
     end
 
     @testset "$(rpad("specification",76))" begin

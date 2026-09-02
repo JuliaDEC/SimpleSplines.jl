@@ -7,6 +7,7 @@ using Test
 # exactly the kind of fault a fresh stream each run would turn into an intermittent one.
 Random.seed!(0x2f7a91c4)
 
+include("aqua_tests.jl")
 include("mesh_tests.jl")
 include("boundary_tests.jl")
 include("bspline_tests.jl")

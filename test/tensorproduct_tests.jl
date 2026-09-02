@@ -98,6 +98,49 @@ using Test
         end
     end
 
+    @testset "$(rpad("a point outside the domain evaluates to zero",76))" begin
+        # The fast path must agree with the full sum *outside* the domain as well, not only
+        # inside it. It did not: with a one-hot coefficient array on a 3 ⊗ 2 basis over
+        # 0 .. 1, `evaluate(B, û, (-0.5, 0.4))` gave 7.0542 where `evaluate(B, I, (-0.5,
+        # 0.4))` gives 0.0 -- the local block on a bounded axis was the nearest cell's
+        # polynomial extrapolated. Random coefficients reached -418 where the answer is
+        # zero, and this is exactly the straying-particle case the one-dimensional
+        # `evaluate` docstring calls out.
+        bx = BSplineBasis(UniformMesh(8, 0 .. 1), 3)
+        bv = BSplineBasis(UniformMesh(8, 0 .. 1), 2, Dirichlet())
+        bp = BSplineBasis(UniformMesh(6, 0 .. 1), 3, Periodic())
+
+        for B in (bx ⊗ bv, bx ⊗ bv ⊗ bp, bv ⊗ bx)
+            D = ndims(B)
+            Random.seed!(0x0d0d0d)
+            û = randn(size(B)...)
+            reference(x, d) = sum(û[I] * evaluate(B, I, x, d) for I in CartesianIndices(B))
+
+            # a point outside on one axis, on all of them, and just outside
+            outside = [ntuple(k -> k == 1 ? -0.5 : 0.4, D),
+                ntuple(k -> k == 1 ? 2.0 : 0.5, D),
+                ntuple(_ -> -1.0, D),
+                ntuple(k -> k == 1 ? -1e-9 : 0.5, D),
+                ntuple(k -> k == 1 ? 1 + 1e-9 : 0.5, D)]
+            # every point above is outside on axis 1, which is bounded in all three
+            # products, so the whole outer product vanishes however the other axes wrap
+            for x in outside
+                d = ntuple(_ -> 0, D)
+                @test evaluate(B, û, x, d) == reference(x, d) == 0
+                @test Spline(B, û)(x) == 0
+            end
+
+            # and the identity in the `evaluate` docstring holds off-domain too, which is
+            # the doctest that was failing there
+            I = ntuple(k -> 2 + k, D)
+            ê = zeros(size(B)...)
+            ê[I...] = 1.0
+            for x in vcat(outside, [ntuple(_ -> 0.3, D)])
+                @test evaluate(B, ê, x) ≈ evaluate(B, I, x)
+            end
+        end
+    end
+
     @testset "$(rpad("Kronecker mass: exact against the dense product",76))" begin
         B = BSplineBasis(UniformMesh(10, 0 .. 2π), 3, Periodic()) ⊗
             BSplineBasis(UniformMesh(8, -10 .. 10), 4)
