@@ -1,6 +1,6 @@
 
 @doc raw"""
-    RecombinedBSplineBasis(parent, bc)
+    RecombinedBSplineBasis(parent, left, right)
 
 A clamped [`BSplineBasis`](@ref) with a homogeneous boundary condition imposed at one or both
 ends by *recombination*: the basis functions that violate the condition are replaced by the
@@ -63,7 +63,8 @@ the constants survive.
 # Requirements
 
 The two end blocks must not overlap: `nbasis(parent) > m_left + m_right + 1`. The order of
-each condition must be at most the degree.
+each condition must be at most the degree. [`Periodic`](@ref) is a condition on the axis
+rather than on an end and is rejected here, as it is by [`boundary_conditions`](@ref).
 """
 struct RecombinedBSplineBasis{T, PT <: BSplineBasis{T}, BCL, BCR} <: AbstractBSplineBasis{T}
     parent::PT
@@ -78,6 +79,14 @@ struct RecombinedBSplineBasis{T, PT <: BSplineBasis{T}, BCL, BCR} <: AbstractBSp
             left::BCL,
             right::BCR) where {
             T, PT <: BSplineBasis{T}, BCL <: BoundaryCondition, BCR <: BoundaryCondition}
+        # `Periodic` imposes no local condition, so it would otherwise pass through this
+        # constructor as `Free` does and yield an identity recombination of the clamped basis
+        # -- a basis that is not periodic, under a name that says it is.
+        (left isa Periodic || right isa Periodic) && throw(ArgumentError(
+            "Periodic identifies the two ends of the domain rather than constraining one, " *
+            "so it cannot be imposed on a clamped basis by recombination; use " *
+            "`PeriodicBSplineBasis(mesh, p)` for the whole axis"))
+
         p = degree(parent)
         Np = nbasis(parent)
         mL = constraint_order(left)
@@ -226,21 +235,26 @@ quadrature needs no separate implementation for the recombined case.
 """
 recombination_matrix(b::RecombinedBSplineBasis) = b.R
 
-# Not even the constants survive a Dirichlet condition, so nothing above degree -1 is
-# reproduced. Any other local condition leaves a space that contains no polynomial either,
-# unless it happens to be satisfied by one -- Neumann admits the constants, since a constant
-# has vanishing derivative at both ends. Reported by testing the two cases that occur rather
-# than by a general argument, because a general argument here would be a guess.
+# The recombined space is exactly the parent space intersected with the two conditions, since
+# each end's functional is nonzero on the parent and the recombined functions are Np-1
+# independent elements of its kernel. A polynomial of degree at most m therefore lies in the
+# span for *every* choice of its coefficients iff both functionals annihilate the whole of
+# P_m. In the local coordinate x - a one has D^k u (a) = k! b_k, so `L = Σ_k c_k D^k` reads off
+# the coefficients b_0, ..., b_m one at a time and vanishes on all of P_m iff c_0 = ... = c_m
+# are all zero. The largest such m at one end is thus one less than the order of the lowest
+# derivative the condition involves, and the two ends combine by intersection.
 function polynomial_reproduction(b::RecombinedBSplineBasis)
-    _reproduces_constants(b.left) && _reproduces_constants(b.right) ? 0 : -1
+    p = degree(b)
+    min(_reproduction_at_end(b.left, p), _reproduction_at_end(b.right, p))
 end
 
-_reproduces_constants(::Free) = true
-_reproduces_constants(::Neumann) = true
-_reproduces_constants(::Natural) = true
-_reproduces_constants(::Dirichlet) = false
-_reproduces_constants(bc::Robin) = iszero(bc.α)
-_reproduces_constants(bc::Constraint) = iszero(bc.c[1])
+# An unconstrained end limits nothing, so the parent's own degree stands. A constrained one
+# has a nonzero coefficient by construction, so `findfirst` always finds one.
+function _reproduction_at_end(bc::BoundaryCondition, p::Int)
+    c = constraint_coefficients(bc)
+    c === nothing && return p
+    return findfirst(!iszero, c) - 2
+end
 
 function evaluate(b::RecombinedBSplineBasis{T}, j::Integer, x::Number,
         d::Integer = 0) where {T}

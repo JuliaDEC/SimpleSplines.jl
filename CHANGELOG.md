@@ -73,8 +73,10 @@ destroys the banding every assembly here relies on.
 #### `polynomial_reproduction`
 
 Reports the largest `m` with every polynomial of degree `≤ m` in the span: `p` for a clamped
-basis, `0` for a periodic one, `-1` for a Dirichlet-recombined one, and the minimum over the
-axes for a tensor product.
+basis, `0` for a periodic one, and the minimum over the axes for a tensor product. For a
+recombined basis it is one less than the order of the lowest derivative either condition
+involves, minimised over the two ends — `-1` for `Dirichlet`, `0` for `Neumann`, `1` for
+`Natural`, since a linear polynomial has vanishing second derivative everywhere.
 
 This exists because the boundary condition is **not** a free choice in a conservative scheme.
 A Galerkin or particle discretisation conserves `∫ π(v) f dv` for a polynomial `π` exactly when
@@ -333,6 +335,33 @@ Found in review of the branch, not by the suite, and each now has a regression t
   The guard now sits in `evaluate_all!`, which is the routine that had the fault and the one
   every other path goes through. It costs nothing measurable: the out-of-domain call is
   allocation-free and, short-circuiting the recursion, faster than an interior one.
+- **`polynomial_reproduction` understated what a recombined basis reproduces.** It reported
+  `0` whenever both conditions admitted the constants and `-1` otherwise, which is right only
+  for conditions on `u` and `u'`. A `Natural` basis (`u'' = 0`) reproduces the linears as well,
+  and `Constraint(0, 0, 0, 1)` (`u''' = 0`) the quadratics, so both were reported one or two
+  degrees low. Understating this is not the safe direction: the number is the predicate a
+  conservative scheme tests, so `polynomial_reproduction(b) ≥ 2` refused a `u''' = 0` basis at
+  `p = 3` that does preserve all three moments. The value is now derived rather than
+  enumerated — one less than the order of the lowest derivative either condition involves,
+  minimised over the ends — and the suite checks it against an L² projection at every degree
+  for eight conditions, monomials up to the reported degree being exact and the next one not.
+- **The scalar `evaluate` of a tensor product allocated, and lost inference**, through two
+  independent faults in one loop: a weight accumulated from inside the index `ntuple` is
+  boxed, and `size(B, k)` reads the tuple of bases with a loop variable, which dispatches
+  dynamically once per term whenever the axes differ in basis type. On a clamped ⊗ periodic ⊗
+  Dirichlet basis that was 72 832 bytes and 34× the runtime; it now allocates its `D` per-axis
+  buffers and nothing else — 256 bytes — for any mix of bases. `evaluate_all!` on the same
+  bases was already allocation-free, which is why the suite could not see it. The deposition
+  loop the `evaluate_all!` docstring recommends had the same `size(B, k)` in it, and now
+  hoists the extents as the implementation does.
+- **`RecombinedBSplineBasis` accepted `Periodic` at an end.** It imposes no local condition, so
+  it passed through the constructor as `Free` does and produced an identity recombination of
+  the clamped basis — a basis that is not periodic, under a name saying it is. Only the
+  exported type was reachable this way; `boundary_conditions` already rejected `Periodic` in a
+  pair, and it is now rejected in the constructor too. The same docstring advertised a
+  two-argument form that does not exist, and now names the real one.
+- **`?SplineDerivative` printed `derivative`'s signature.** The type's docstring was headed
+  with the function's, so the type had no description of its own and the two overlapped.
 - **`_apply_along!` claimed the operator was usable from several threads at once.** Its
   buffers are local to the call, which is not the same thing: a `CirculantMass` holds a
   scratch vector that `mass_solve!` writes, so two threads applying one operator would

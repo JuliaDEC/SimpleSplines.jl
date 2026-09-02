@@ -151,9 +151,9 @@ every call.
 
 This is what keeps [`evaluate_all!`](@ref) allocation-free, `findcell` being on the innermost
 loop of a particle deposition where one allocation per particle per step is the whole cost of
-the routine. [`UniformMesh`](@ref) still builds its vector on demand, its breakpoints being a
-closed form and its own `findcell` a division that needs none of them; the other mesh families
-hold theirs, and for those the basis and the mesh share one array.
+the routine. [`UniformMesh`](@ref) builds its vector on demand, its breakpoints being a closed
+form and its own `findcell` a division that needs none of them; the other mesh families hold
+theirs, and for those the basis and the mesh share one array.
 
 As for a mesh, the result must not be mutated: it is the basis's own storage, and where the
 mesh stores its breakpoints too it is the mesh's as well.
@@ -205,7 +205,7 @@ from the projected distribution — ``1``, ``v`` and ``v^2`` — needs
 |:--|:--|
 | [`BSplineBasis`](@ref) | `p` — the clamped basis reproduces every polynomial it can represent |
 | [`PeriodicBSplineBasis`](@ref) | `0` — a partition of unity, but ``v`` is not periodic |
-| [`RecombinedBSplineBasis`](@ref) with [`Dirichlet`](@ref) | `-1` — every function vanishes at the ends |
+| [`RecombinedBSplineBasis`](@ref) | one less than the order of the lowest derivative either condition involves — `-1` for [`Dirichlet`](@ref), since every function vanishes at the ends, `0` for [`Neumann`](@ref), `1` for [`Natural`](@ref) |
 
 ```jldoctest
 julia> m = UniformMesh(16, -10 .. 10);
@@ -218,6 +218,9 @@ julia> polynomial_reproduction(BSplineBasis(m, 3, Periodic()))
 
 julia> polynomial_reproduction(BSplineBasis(m, 3, Dirichlet()))
 -1
+
+julia> polynomial_reproduction(BSplineBasis(m, 3, Natural()))
+1
 ```
 
 !!! warning "This is why the boundary condition is not a free choice"

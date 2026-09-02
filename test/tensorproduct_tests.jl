@@ -96,6 +96,17 @@ using Test
             @test j₀[k] == jk
             @test bufs[k] ≈ vk
         end
+
+        # The local sum stays inferable, and allocates its per-axis buffers and nothing else,
+        # whatever mix of basis types the axes carry. Two separate faults cost both at once
+        # on exactly this basis: a weight accumulated from inside the index `ntuple` is
+        # boxed, and `size(B, k)` reads the tuple of bases with a loop variable, which
+        # dispatches dynamically once per term when the axes differ in type. Together they
+        # were 72 832 bytes and 34x the runtime here, while `evaluate_all!` on the same bases
+        # was already allocation-free -- which is why the suite could not see it.
+        @test (@inferred evaluate(B, û, x)) isa Float64
+        @test (@inferred evaluate(B, û, x, (0, 1, 0))) isa Float64
+        @test (@allocated evaluate(B, û, x)) < 1024
     end
 
     @testset "$(rpad("a point outside the domain evaluates to zero",76))" begin

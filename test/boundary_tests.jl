@@ -105,6 +105,14 @@ using Test
         @test_throws ArgumentError BSplineBasis(UniformMesh(8, 0 .. 1), 0, Neumann())
         # too few functions for both ends
         @test_throws ArgumentError BSplineBasis(UniformMesh(1, 0 .. 1), 0, Dirichlet())
+
+        # Periodic is not a condition on an end. It imposes no local constraint, so without
+        # the check it would recombine as Free does and give back the clamped basis under a
+        # name saying it is periodic.
+        parent = BSplineBasis(UniformMesh(8, 0 .. 1), 3)
+        @test_throws ArgumentError RecombinedBSplineBasis(parent, Periodic(), Dirichlet())
+        @test_throws ArgumentError RecombinedBSplineBasis(parent, Dirichlet(), Periodic())
+        @test_throws ArgumentError RecombinedBSplineBasis(parent, Periodic(), Periodic())
     end
 
     @testset "$(rpad("show",76))" begin

@@ -120,11 +120,10 @@ evaluate(s::Spline, x) = evaluate(s.basis, s.coefficients, x)
 evaluate(s::Spline, x, d) = evaluate(s.basis, s.coefficients, x, d)
 
 @doc raw"""
-    derivative(s::Spline, d = 1)
-    derivative(s::Spline, d::NTuple)
+    SplineDerivative
 
-A callable giving the `d`-th derivative of `s`, so that `derivative(s).(v)` broadcasts over a
-vector of points the way `s.(v)` does.
+A derivative of a [`Spline`](@ref), as returned by [`derivative`](@ref). Callable, so that
+`derivative(s).(v)` broadcasts over a vector of points the way `s.(v)` does.
 
 ```jldoctest
 julia> b = BSplineBasis(UniformMesh(16, 0 .. 1), 3);

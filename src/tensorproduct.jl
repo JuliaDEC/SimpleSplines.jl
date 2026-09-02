@@ -216,19 +216,23 @@ function evaluate(B::TensorProductBasis{T, D}, û::AbstractArray{S, D}, x,
     bufs = ntuple(k -> Vector{R}(undef, local_width(B.bases[k])), D)
     j₀ = evaluate_all!(bufs, B, x, d)
 
+    # `size(B, k)` reads `B.bases[k]`, and the axes need not have the same basis type, so
+    # indexing that tuple with a loop variable dispatches dynamically. Taken once as a tuple
+    # of integers instead, which `map` over the axes builds unrolled.
+    sz = size(B)
+
     v = zero(R)
     for t in CartesianIndices(ntuple(k -> length(bufs[k]), D))
-        w = one(R)
-        idx = ntuple(D) do k
-            w *= bufs[k][t[k]]
-            basis_index(B.bases[k], j₀[k] + t[k] - 1)
-        end
+        idx = ntuple(k -> basis_index(B.bases[k], j₀[k] + t[k] - 1), D)
         # A periodic axis wraps, so every index is in range; a bounded one does not, and an
         # index outside 1:N_d means the point lies in a cell whose block reaches past the end
         # of that axis. Such a term is genuinely absent rather than zero-valued, so it is
         # skipped rather than indexed.
-        all(k -> 1 ≤ idx[k] ≤ size(B, k), 1:D) || continue
-        v += w * û[idx...]
+        all(k -> 1 ≤ idx[k] ≤ sz[k], 1:D) || continue
+        # The weight is formed here rather than accumulated inside the `ntuple` above: a
+        # variable assigned from within that closure is boxed, which infers as `Any` and makes
+        # every element access below a dynamic dispatch.
+        v += prod(ntuple(k -> bufs[k][t[k]], D)) * û[idx...]
     end
     return v
 end
@@ -250,18 +254,23 @@ materialised: at ``D = 3`` and cubic bases that is 64 numbers per particle, and 
 consumes them can form each product as it goes. A deposition therefore reads
 
 ```julia
+sz = size(B)
 bufs = ntuple(k -> zeros(local_width(bases(B)[k])), ndims(B))
 j₀ = evaluate_all!(bufs, B, v, (0, 0))
 for t in CartesianIndices(map(length, bufs))
     I = ntuple(k -> basis_index(bases(B)[k], j₀[k] + t[k] - 1), ndims(B))
-    all(k -> 1 ≤ I[k] ≤ size(B, k), 1:ndims(B)) || continue
-    coeffs[I...] += w * prod(k -> bufs[k][t[k]], 1:ndims(B))
+    all(k -> 1 ≤ I[k] ≤ sz[k], 1:ndims(B)) || continue
+    coeffs[I...] += w * prod(ntuple(k -> bufs[k][t[k]], ndims(B)))
 end
 ```
 
 which is ``O(\prod_d (p_d + 1))`` per particle rather than ``O(N)``. As on one axis, the
 returned indices are the ones *before* wrapping; put them through
 [`basis_index`](@ref).
+
+The extent tuple is taken once outside the loop on purpose: `size(B, k)` reaches into the
+tuple of bases, whose axes need not share a basis type, so a loop variable there costs a
+dynamic dispatch per term — the one place this pattern is easy to get wrong.
 """
 function evaluate_all!(bufs::NTuple{D, <:AbstractVector}, B::TensorProductBasis{T, D}, x,
         d::NTuple{D, Int} = ntuple(_ -> 0, D)) where {T, D}

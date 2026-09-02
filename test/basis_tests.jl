@@ -408,12 +408,43 @@ Base.IndexStyle(::Type{<:ShiftedVector}) = IndexLinear()
         @test all(isapprox(evaluate(bp, û, x), 1; atol = 1e-10)
         for x in range(-10, 9; length = 11))
 
-        # a Dirichlet-recombined basis loses even the constants
-        @test polynomial_reproduction(BSplineBasis(m, 3, Dirichlet())) == -1
-        @test polynomial_reproduction(BSplineBasis(m, 3, Neumann())) == 0
-        @test polynomial_reproduction(BSplineBasis(m, 3, Natural())) == 0
-        @test polynomial_reproduction(BSplineBasis(m, 3, Robin(1.0, 1.0))) == -1
-        @test polynomial_reproduction(BSplineBasis(m, 3, Robin(0.0, 1.0))) == 0
+        # A recombined basis keeps the polynomials below the lowest derivative its conditions
+        # involve: Dirichlet loses even the constants, Neumann keeps them, and a condition on
+        # u'' or u''' keeps more than that, since a linear or quadratic polynomial satisfies
+        # it identically.
+        #
+        # Checked against an L² projection at every degree, not only asserted. The number is
+        # a claim about which moments the projection preserves, so the projection is what
+        # settles it -- and understating it is not a safe error, because it refuses a basis
+        # that does conserve the moment asked about.
+        mr = UniformMesh(8, 0 .. 1)
+        pr = 4
+        xr = range(0, 1; length = 9)
+        for (bc, r) in ((Dirichlet(), -1),
+            (Neumann(), 0),
+            (Natural(), 1),
+            (Constraint(0, 0, 0, 1), 2),
+            (Robin(1.0, 1.0), -1),
+            (Robin(0.0, 1.0), 0),
+            ((Dirichlet(), Neumann()), -1),
+            ((Natural(), Neumann()), 0))
+            br = BSplineBasis(mr, pr, bc)
+            qr = SplineQuadrature(br)
+            @test polynomial_reproduction(br) == r
+
+            # every monomial up to the reported degree is reproduced exactly
+            for k in 0:r
+                û = l2_projection(qr, x -> x^k)
+                @test maximum(abs(evaluate(br, û, x) - x^k) for x in xr) < 1e-9
+            end
+
+            # and the next one is not: it lies outside the span, so its projection is a
+            # genuine approximation. The two sides differ by nine orders of magnitude here,
+            # so the threshold is not a tuned one -- the smallest such error measured is
+            # 8.8e-5 and the largest reproduced one 2.5e-14.
+            û = l2_projection(qr, x -> x^(r + 1))
+            @test maximum(abs(evaluate(br, û, x) - x^(r + 1)) for x in xr) > 1e-6
+        end
     end
 
     @testset "$(rpad("quadrature on all three bases",76))" begin

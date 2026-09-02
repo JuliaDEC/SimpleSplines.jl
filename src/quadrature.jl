@@ -151,8 +151,8 @@ struct SplineQuadrature{T, BT <: AbstractBSplineBasis{T}, MO <: MassOperator{T}}
         # Φ diag(f w) Φᵀ cost N² times the number of quadrature points, when the number of
         # structurally nonzero entries per row is only (p+1) n_q.
         #
-        # The entry count is no longer n (p+1) nq exactly: a recombined basis has a wider
-        # block at the two ends. The vectors are grown rather than presized for that reason.
+        # The entry count is not n (p+1) nq exactly: a recombined basis has a wider block at
+        # the two ends. The vectors are grown rather than presized for that reason.
         Is = Int[]
         Js = Int[]
         Vs = [T[] for _ in 0:dmax]
