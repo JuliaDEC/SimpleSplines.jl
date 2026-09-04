@@ -169,7 +169,9 @@ visible to the 63 875 assertions that were passing at the time.
 `mass_matrix` and `Matrix` of a `KroneckerMass` threw `MethodError` on a one-factor product.
 The assembly splatted into `kron`, which has no one-argument method, so a `D = 1`
 `TensorProductBasis` — explicitly legal, and constructed by the suite — could be solved with
-but not assembled. Nothing else built a `TensorProductQuadrature` on one axis.
+but not assembled. Nothing else built a `TensorProductQuadrature` on one axis. The assembled
+matrix is a copy at `D = 1` as well, where the fold is the identity and would otherwise hand
+back the factor's own storage rather than the matrix formed on demand that is documented.
 
 `derivative(s, k)` on a tensor-product `Spline` silently did the wrong thing whenever the
 coefficients were wider than the basis. `Spline`'s element type is the promotion of the two,
@@ -192,10 +194,15 @@ path, an equally spaced `GeneralMesh` deliberately taking the general route wher
 collide as dictionary keys. `hash` stays geometric, which the `isequal ⟹ hash` contract
 permits.
 
-Two smaller ones: `size(::KroneckerMass, d)` answered for `d ≤ 0` where `Base` throws, and
-`weighted_matrix` returned whatever its triple product produced while `mixed_matrix`,
-documented as the same contraction, narrowed to `SparseMatrixCSC{eltype(q), Int}`. Both now
-match `Base` and each other.
+One smaller one: `size(::KroneckerMass, d)` answered for `d ≤ 0` where `Base` throws a
+`BoundsError`, and now throws it too.
+
+`weighted_matrix` is unchanged, but its element type is now stated and tested: the promotion of
+the quadrature's with the sample's, so that a complex coefficient field gives a complex matrix.
+It is the one assembly with a user-supplied weight, and therefore the one that cannot narrow to
+`eltype(q)` the way `mixed_matrix` does — a narrowing that would `InexactError` on a complex
+field and silently round a `Float64` one sampled against a `Float32` basis, which is what
+`l2_projection!` takes its own care to avoid.
 
 ### Periodic B-spline finite elements
 

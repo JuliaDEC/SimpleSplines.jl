@@ -357,9 +357,13 @@ three dimensions it will not fit. Provided so that a test can check the factored
 against the dense one at a size where both are possible.
 """
 function mass_matrix(op::KroneckerMass)
-    # `foldl` rather than a splat into `kron`: a one-factor product is legal, and `kron` has
-    # no one-argument method, so splatting it threw a `MethodError` for `D = 1`.
-    foldl(kron, reverse(map(mass_matrix, op.ops)))
+    # A fold rather than a splat into `kron`, which has no one-argument method and so cannot
+    # assemble the one-factor product that `TensorProductBasis` allows. At `D = 1` the fold
+    # is the identity and would hand back the factor's own storage, hence the `copy`: the
+    # docstring promises a matrix formed on demand, which a caller may mutate. The length is
+    # a property of the tuple type, so the branch is resolved when the method is compiled.
+    Ms = reverse(map(mass_matrix, op.ops))
+    length(Ms) == 1 ? copy(only(Ms)) : foldl(kron, Ms)
 end
 Base.Matrix(op::KroneckerMass) = Matrix(mass_matrix(op))
 

@@ -323,6 +323,10 @@ The matrix ``\int_\Omega f(x) \, D^a \phi_k \, D^b \phi_l \, dx``.
 [`quadrature_nodes`](@ref) — the second form is what a variable coefficient given as a
 spline expansion becomes, and it avoids resampling a field that is already in hand.
 
+The element type is the promotion of the quadrature's with `f`'s, so a complex coefficient
+field gives a complex matrix — unlike [`mixed_matrix`](@ref), which carries no weight and
+is always `eltype(q)`.
+
 ```jldoctest
 julia> q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(16, 2π), 3));
 
@@ -338,8 +342,11 @@ function weighted_matrix(q::SplineQuadrature, f::AbstractVector, a::Integer, b::
     length(f) == length(q.x) || throw(DimensionMismatch(
         "the coefficient was sampled at $(length(f)) points but the quadrature has " *
         "$(length(q.x))"))
-    A = basis_values(q, a) * Diagonal(f .* q.w) * basis_values(q, b)'
-    SparseMatrixCSC{eltype(q), Int}(A)
+    # `mixed_matrix` narrows to `eltype(q)`; this cannot. With a user-supplied weight the
+    # element type is the promotion of the quadrature's with the sample's, so a complex
+    # coefficient field gives a complex matrix rather than an `InexactError`. `q.Φ` is
+    # concretely typed, so the product already is that `SparseMatrixCSC`.
+    basis_values(q, a) * Diagonal(f .* q.w) * basis_values(q, b)'
 end
 
 @doc raw"""
