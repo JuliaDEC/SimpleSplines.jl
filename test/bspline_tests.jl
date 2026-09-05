@@ -53,7 +53,7 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
     @testset "$(rpad("support is exactly p+1 cells",76))" begin
         for p in 0:4
             b = PeriodicBSplineBasis(UniformMesh(12, 2π), p)
-            bnds = cellbounds(b)
+            bnds = breakpoints(b)
             live = count(1:12) do k
                 xs = range(bnds[k], bnds[k + 1], length = 7)[2:6]
                 maximum(abs, [evaluate(b, 1, x) for x in xs]) > 1e-13
@@ -163,11 +163,13 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
             @test length(unique(round.(ξ; digits = 10))) == nbasis(b)
         end
         # for p = 1 the Greville point of phi_j is where the hat function peaks, i.e. the
-        # breakpoint one cell over, so the node set is the breakpoint set cyclically shifted
-        @test sort(nodes(PeriodicBSplineBasis(UniformMesh(8, 8.0), 1))) ≈
-              breakpoints(UniformMesh(8, 8.0))
-        @test nodes(PeriodicBSplineBasis(UniformMesh(8, 8.0), 1)) ≈
-              circshift(breakpoints(UniformMesh(8, 8.0)), -1)
+        # breakpoint one cell over, so the node set is the breakpoint set cyclically shifted.
+        # `breakpoints` returns the n+1 cell boundaries of the interval; on a torus the last
+        # is the periodic image of the first and is dropped, so the comparison is against the
+        # n distinct ones.
+        distinct = breakpoints(UniformMesh(8, 8.0))[begin:(end - 1)]
+        @test sort(nodes(PeriodicBSplineBasis(UniformMesh(8, 8.0), 1))) ≈ distinct
+        @test nodes(PeriodicBSplineBasis(UniformMesh(8, 8.0), 1)) ≈ circshift(distinct, -1)
         @test grid(PeriodicBSplineBasis(UniformMesh(8, 8.0), 3)) ==
               nodes(PeriodicBSplineBasis(UniformMesh(8, 8.0), 3))
     end

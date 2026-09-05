@@ -136,6 +136,15 @@ using Test
         @test weighted_matrix(q, sin, 0, 1) ≈
               weighted_matrix(q, sin.(quadrature_nodes(q)), 0, 1)
         @test_throws DimensionMismatch weighted_matrix(q, [1.0, 2.0], 0, 1)
+        # a real weight gives what `mixed_matrix` gives, but the sample may be wider than
+        # the quadrature: a complex coefficient field is a complex matrix, not an error
+        @test typeof(weighted_matrix(q, one, 0, 1)) == typeof(mixed_matrix(q, 0, 1))
+        fc = cis.(quadrature_nodes(q))
+        Ac = weighted_matrix(q, fc, 0, 1)
+        @test eltype(Ac) == ComplexF64
+        @test Ac ≈ weighted_matrix(q, cis, 0, 1)
+        @test real(Ac) ≈ weighted_matrix(q, cos, 0, 1)
+        @test imag(Ac) ≈ weighted_matrix(q, sin, 0, 1)
         # against a direct quadrature of int sin(x) phi_k phi_l
         Φ = basis_values(q, 0)
         w = quadrature_weights(q)

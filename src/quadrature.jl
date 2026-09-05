@@ -26,12 +26,42 @@ julia> quadrature_order.(1:4)
 """
 quadrature_order(p::Integer) = cld(3p, 2)
 
+"""
+    local_indices(b::AbstractBSplineBasis, cell)
+
+The indices of the basis functions that are nonzero on `cell`, as an iterable of `Int`.
+
+`cell:(cell+p)` for a clamped [`BSplineBasis`](@ref); the same block wrapped onto `1:N` for a
+[`PeriodicBSplineBasis`](@ref); and the precomputed column range for a
+[`RecombinedBSplineBasis`](@ref), which may be wider than `p+1` near an end.
+
+The indices are distinct, which is what lets an assembly push one entry per pair without
+having to worry about a duplicate being summed into place.
+"""
+function local_indices(b::BSplineBasis, cell::Integer)
+    cell:(cell + degree(b))
+end
+
+function local_indices(b::PeriodicBSplineBasis, cell::Integer)
+    p = degree(b)
+    (basis_index(b, cell - p + t - 1) for t in 1:(p + 1))
+end
+
+function local_indices(b::RecombinedBSplineBasis, cell::Integer)
+    b.firstcol[cell]:b.lastcol[cell]
+end
+
 @doc raw"""
     SplineQuadrature(basis; nq = quadrature_order(degree(basis)), dmax = 3)
 
-The assembly table of a [`PeriodicBSplineBasis`](@ref): its basis functions and their
+The assembly table of an [`AbstractBSplineBasis`](@ref): its basis functions and their
 derivatives tabulated at the global Gauß-Legendre quadrature points, together with the
 quadrature weights and the mass matrix.
+
+Any of the three bases serves — clamped, periodic or recombined. What differs between them is
+which functions are nonzero on a cell ([`local_indices`](@ref)) and which representation the
+mass matrix takes ([`mass_operator`](@ref)); the contractions below are the same in all three
+cases.
 
 This is the one data structure every assembly here is built from. With `Φ[d+1][i,q]` the
 `d`-th derivative of ``\phi_i`` at the `q`-th quadrature point and `w` the weight vector,
@@ -65,10 +95,11 @@ true
 
 # Storage
 
-`Φ` is stored densely, `N` by `n * nq`. Only the entries inside each basis function's
-support of `p+1` cells are ever nonzero and only those are computed, but keeping the array
-dense lets the contractions above run as one BLAS call, which is the faster arrangement at
-the sizes these discretisations are used at.
+`Φ` is a `SparseMatrixCSC`, `N` by `n * nq`, one per derivative order. Only the entries inside
+each basis function's support of `p+1` cells are ever nonzero, and only those are stored: the
+structurally nonzero count per row is `(p+1) * nq` rather than `n * nq`, which is what keeps
+the contraction ``\Phi \, \mathrm{diag}(f \odot w) \, \Phi^T`` proportional to `N p` instead
+of `N²`.
 
 !!! warning "One quadrature per thread"
     A `SplineQuadrature` carries mutable state behind an otherwise read-only interface:
@@ -77,7 +108,7 @@ the sizes these discretisations are used at.
     quadrature must not be used from two threads at once. Give each thread its own, or stay
     with the allocating [`l2_projection`](@ref), which forms its own product.
 """
-struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
+struct SplineQuadrature{T, BT <: AbstractBSplineBasis{T}, MO <: MassOperator{T}}
     basis::BT
     nq::Int
     x::Vector{T}
@@ -90,7 +121,7 @@ struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
 
     function SplineQuadrature(basis::BT;
             nq::Integer = quadrature_order(degree(basis)),
-            dmax::Integer = 3) where {T, BT <: PeriodicBSplineBasis{T}}
+            dmax::Integer = 3) where {T, BT <: AbstractBSplineBasis{T}}
         nq ≥ 1 || throw(ArgumentError(
             "at least one quadrature point per cell is needed, got nq = $(nq)"))
         dmax ≥ 0 || throw(ArgumentError(
@@ -102,7 +133,7 @@ struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
 
         ξ = gauss_legendre_nodes(T, nq)
         ω = gauss_legendre_weights(T, nq)
-        bounds = cellbounds(basis)
+        bounds = breakpoints(basis)
 
         x = Vector{T}(undef, n * nq)
         w = Vector{T}(undef, n * nq)
@@ -114,27 +145,26 @@ struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
             end
         end
 
-        # Only the p+1 basis functions supported on a cell are evaluated there, and only
-        # those entries are stored. That is the whole difference between an O(N p² n_q)
-        # assembly and an O(N² n n_q) one: a dense tabulation makes every contraction
+        # Only the basis functions supported on a cell are evaluated there, and only those
+        # entries are stored. That is the whole difference between an O(N p² n_q) assembly
+        # and an O(N² n n_q) one: a dense tabulation makes every contraction
         # Φ diag(f w) Φᵀ cost N² times the number of quadrature points, when the number of
         # structurally nonzero entries per row is only (p+1) n_q.
-        nnzΦ = n * (p + 1) * nq
-        Is = Vector{Int}(undef, nnzΦ)
-        Js = Vector{Int}(undef, nnzΦ)
-        Vs = [Vector{T}(undef, nnzΦ) for _ in 0:dmax]
+        #
+        # The entry count is not n (p+1) nq exactly: a recombined basis has a wider block at
+        # the two ends. The vectors are grown rather than presized for that reason.
+        Is = Int[]
+        Js = Int[]
+        Vs = [T[] for _ in 0:dmax]
 
-        t = 0
-        for k in 1:n, j in (k - p):k
+        for k in 1:n, i in local_indices(basis, k)
 
-            i = mod1(j, N)
             for r in 1:nq
-                q = (k-1)*nq + r
-                t += 1
-                Is[t] = i
-                Js[t] = q
+                q = (k - 1) * nq + r
+                push!(Is, i)
+                push!(Js, q)
                 for d in 0:dmax
-                    Vs[d + 1][t] = evaluate(basis, i, x[q], d)
+                    push!(Vs[d + 1], evaluate(basis, i, x[q], d))
                 end
             end
         end
@@ -144,12 +174,12 @@ struct SplineQuadrature{T, BT <: PeriodicBSplineBasis{T}, MO <: MassOperator{T}}
         M = Φ[1] * Diagonal(w) * Φ[1]'
         M = (M + M') / 2                    # symmetric by construction; enforce it exactly
 
-        # The representation of the mass matrix is chosen by the mesh: circulant, hence
-        # diagonalised by the Fourier transform, on a uniform mesh; a sparse Cholesky
-        # factorisation otherwise. Too coarse a quadrature makes M singular rather than
-        # merely inexact, and `mass_operator` says so by name.
+        # The representation of the mass matrix is chosen by the basis: circulant, hence
+        # diagonalised by the Fourier transform, for a periodic basis on a uniform mesh; a
+        # sparse Cholesky factorisation otherwise. Too coarse a quadrature makes M singular
+        # rather than merely inexact, and `mass_operator` says so by name.
         mass = try
-            mass_operator(M, mesh(basis))
+            mass_operator(M, basis)
         catch err
             err isa ArgumentError && throw(ArgumentError(
                 "the mass matrix assembled with nq = $(nq) points per cell is not usable " *
@@ -200,8 +230,10 @@ end
 """
     mass_operator(q::SplineQuadrature)
 
-The [`MassOperator`](@ref) of the quadrature — a [`CirculantMass`](@ref) on a uniform mesh,
-a [`FactorizedMass`](@ref) otherwise.
+The [`MassOperator`](@ref) of the quadrature, chosen by the basis rather than by the mesh: a
+[`CirculantMass`](@ref) for a periodic basis on a [`UniformMesh`](@ref), a
+[`FactorizedMass`](@ref) for a periodic basis on any other mesh, and a [`BandedMass`](@ref)
+for a bounded basis — clamped or recombined — whose mass matrix has no seam to wrap across.
 """
 mass_operator(q::SplineQuadrature) = q.mass
 
@@ -293,6 +325,10 @@ The matrix ``\int_\Omega f(x) \, D^a \phi_k \, D^b \phi_l \, dx``.
 [`quadrature_nodes`](@ref) — the second form is what a variable coefficient given as a
 spline expansion becomes, and it avoids resampling a field that is already in hand.
 
+The element type is the promotion of the quadrature's with `f`'s, so a complex coefficient
+field gives a complex matrix — unlike [`mixed_matrix`](@ref), which carries no weight and
+is always `eltype(q)`.
+
 ```jldoctest
 julia> q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(16, 2π), 3));
 
@@ -308,6 +344,10 @@ function weighted_matrix(q::SplineQuadrature, f::AbstractVector, a::Integer, b::
     length(f) == length(q.x) || throw(DimensionMismatch(
         "the coefficient was sampled at $(length(f)) points but the quadrature has " *
         "$(length(q.x))"))
+    # `mixed_matrix` narrows to `eltype(q)`; this cannot. With a user-supplied weight the
+    # element type is the promotion of the quadrature's with the sample's, so a complex
+    # coefficient field gives a complex matrix rather than an `InexactError`. `q.Φ` is
+    # concretely typed, so the product already is that `SparseMatrixCSC`.
     basis_values(q, a) * Diagonal(f .* q.w) * basis_values(q, b)'
 end
 
@@ -357,10 +397,11 @@ end
 
 In-place [`l2_projection`](@ref), writing the coefficients into `û`.
 
-On a [`UniformMesh`](@ref) this allocates nothing: the ``f \odot w`` product goes into a
-buffer held by the quadrature, the load vector is formed with `mul!` straight into `û`, and
-the [`CirculantMass`](@ref) solve is itself allocation-free. On a non-uniform mesh the
-CHOLMOD solve still allocates a temporary, as [`mass_solve!`](@ref) notes.
+This allocates nothing on every basis but one: the ``f \odot w`` product goes into a buffer
+held by the quadrature, the load vector is formed with `mul!` straight into `û`, and both the
+[`CirculantMass`](@ref) and the [`BandedMass`](@ref) solve are themselves allocation-free.
+The exception is a periodic basis on a non-uniform mesh, where the [`FactorizedMass`](@ref)
+solve still allocates a CHOLMOD temporary, as [`mass_solve!`](@ref) notes.
 
 A sample whose element type is wider than the quadrature's — a complex `f` — gets its own
 product instead of being narrowed into that buffer, so this method accepts exactly what

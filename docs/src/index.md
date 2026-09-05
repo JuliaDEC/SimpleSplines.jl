@@ -72,15 +72,24 @@ rather than about the discretisation:
 ## The mass matrix
 
 Solves against the mass matrix go through a [`MassOperator`](@ref), and which representation
-is built is decided by the mesh:
+is built is decided by the **basis** — a uniform mesh is necessary for circulance but not
+sufficient, since a clamped basis on one has ``p`` boundary functions at each end that are
+not translates of anything:
 
-  - on a [`UniformMesh`](@ref) the basis functions are translates of a single cardinal
-    spline, so ``\mathbb{M}`` is **circulant** and diagonalised by the discrete Fourier
-    transform. A solve is two planned transforms and a pointwise division, and allocates
-    nothing beyond its result.
-  - on a [`GradedMesh`](@ref) or [`RandomMesh`](@ref) it is banded modulo ``N`` but *not*
-    circulant — the basis functions are no longer translates of one another — so there is
-    nothing for a transform to diagonalise and a sparse Cholesky factorisation is used.
+  - for a [`PeriodicBSplineBasis`](@ref) on a [`UniformMesh`](@ref) the basis functions are
+    translates of a single cardinal spline, so ``\mathbb{M}`` is **circulant** and
+    diagonalised by the discrete Fourier transform. A solve is two planned transforms and a
+    pointwise division, and allocates nothing beyond its result. This is a
+    [`CirculantMass`](@ref).
+  - for a bounded basis — [`BSplineBasis`](@ref) or [`RecombinedBSplineBasis`](@ref) — there
+    is no seam, so the overlaps are contiguous and ``\mathbb{M}`` is **banded** outright. A
+    banded Cholesky solves it in ``O(Np)`` and allocates nothing at all. This is a
+    [`BandedMass`](@ref).
+  - for a periodic basis on a [`GradedMesh`](@ref) or [`RandomMesh`](@ref) it is banded
+    modulo ``N`` but *not* circulant — the basis functions are no longer translates of one
+    another — so there is nothing for a transform to diagonalise, and the wrap-around entries
+    put it outside the banded representation too. A sparse Cholesky factorisation is what is
+    left, a [`FactorizedMass`](@ref).
 
 ```@example intro
 mass_operator(q)
