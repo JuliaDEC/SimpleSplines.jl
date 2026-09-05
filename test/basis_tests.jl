@@ -147,6 +147,35 @@ Base.IndexStyle(::Type{<:ShiftedVector}) = IndexLinear()
                            Matrix(R' * basis_values(qp, 0))) < 1e-12
     end
 
+    @testset "$(rpad("recombined: Greville nodes",76))" begin
+        # The abscissa of a recombined function is that of the parent function it carries with
+        # unit coefficient. Taking the largest coefficient instead collapses the columns of an
+        # end block onto the anchor row they share, which leaves `nodes` -- and hence
+        # `ContinuumArrays.grid` -- a degenerate set that no assembly here would notice.
+        conditions = (Free(), Dirichlet(), Neumann(), Natural(),
+            (Dirichlet(), Neumann()), (Neumann(), Natural()),
+            (Natural(), Dirichlet()), Robin(1.0, 2.0), Constraint(0, 0, 0, 1))
+        for p in 1:4, bc in conditions
+
+            cs = boundary_conditions(bc)
+            all(constraint_order(c) ≤ p for c in cs) || continue
+
+            b = BSplineBasis(UniformMesh(8, 0 .. 1), p, bc)
+            b isa RecombinedBSplineBasis || continue
+            ξ = nodes(b)
+
+            @test length(ξ) == nbasis(b) == nnodes(b)
+            @test allunique(ξ)
+            @test issorted(ξ)
+            @test all(0 .≤ ξ .≤ 1)
+
+            # the property the distinctness is for: collocating at these points gives a
+            # solvable system. With repeated abscissae the matrix is singular instead.
+            C = [evaluate(b, j, x) for x in ξ, j in eachindex(b)]
+            @test rank(C) == nbasis(b)
+        end
+    end
+
     @testset "$(rpad("local evaluation agrees with the reference recursion",76))" begin
         # `evaluate_all` runs de Boor's triangular scheme plus derivative lifting;
         # `evaluate` runs the Cox-de Boor recursion written out as it stands. They must

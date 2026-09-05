@@ -230,8 +230,10 @@ end
 """
     mass_operator(q::SplineQuadrature)
 
-The [`MassOperator`](@ref) of the quadrature — a [`CirculantMass`](@ref) on a uniform mesh,
-a [`FactorizedMass`](@ref) otherwise.
+The [`MassOperator`](@ref) of the quadrature, chosen by the basis rather than by the mesh: a
+[`CirculantMass`](@ref) for a periodic basis on a [`UniformMesh`](@ref), a
+[`FactorizedMass`](@ref) for a periodic basis on any other mesh, and a [`BandedMass`](@ref)
+for a bounded basis — clamped or recombined — whose mass matrix has no seam to wrap across.
 """
 mass_operator(q::SplineQuadrature) = q.mass
 

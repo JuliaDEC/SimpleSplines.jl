@@ -76,6 +76,7 @@ struct RecombinedBSplineBasis{T, PT <: BSplineBasis{T}, BCL, BCR} <: AbstractBSp
     R::SparseMatrixCSC{T, Int}
     firstcol::Vector{Int}
     lastcol::Vector{Int}
+    unitrow::Vector{Int}
     width::Int
 
     function RecombinedBSplineBasis(parent::PT,
@@ -120,14 +121,14 @@ struct RecombinedBSplineBasis{T, PT <: BSplineBasis{T}, BCL, BCR} <: AbstractBSp
             "imposing $(left) on the left and $(right) on the right removes $(Np - N) of " *
             "them, leaving a basis with no functions at all; refine the mesh"))
 
-        R, firstcol, lastcol = _recombination(parent, left, right)
+        R, firstcol, lastcol, unitrow = _recombination(parent, left, right)
 
         # The local block width is a constant of the basis and `evaluate_all!` needs it on
         # every call, so it is computed here rather than by a maximum over all cells each
         # time -- which made the recombined particle path O(ncells) per point.
         width = maximum(lastcol[c] - firstcol[c] + 1 for c in eachindex(firstcol))
 
-        new{T, PT, BCL, BCR}(parent, left, right, R, firstcol, lastcol, width)
+        new{T, PT, BCL, BCR}(parent, left, right, R, firstcol, lastcol, unitrow, width)
     end
 end
 
@@ -163,11 +164,19 @@ function _recombination(parent::BSplineBasis{T}, left::BoundaryCondition,
     Vs = T[]
     col = 0
 
+    # The parent row each column carries with unit coefficient, recorded here rather than
+    # recovered from `R` later. It cannot be found by searching a column for the value 1: the
+    # anchor coefficient -a_t/a_{m+1} is itself exactly 1.0 in ordinary cases -- for `Neumann`
+    # the two end derivatives are ∓p/h -- so a value search ties with the anchor row, which
+    # every column of an end block shares and which would then repeat in `nodes`.
+    unitrow = Int[]
+
     if ncL > 0
         aL = _constraint_values(parent, left, a, 1:(mL + 1))
         anchor = aL[end]
         for t in 1:mL
             col += 1
+            push!(unitrow, t)
             push!(Is, t)
             push!(Js, col)
             push!(Vs, one(T))
@@ -179,6 +188,7 @@ function _recombination(parent::BSplineBasis{T}, left::BoundaryCondition,
 
     for i in firstpass:lastpass
         col += 1
+        push!(unitrow, i)
         push!(Is, i)
         push!(Js, col)
         push!(Vs, one(T))
@@ -189,6 +199,7 @@ function _recombination(parent::BSplineBasis{T}, left::BoundaryCondition,
         anchor = aR[begin]
         for s in 2:(mR + 1)
             col += 1
+            push!(unitrow, Np - mR - 1 + s)
             push!(Is, Np - mR - 1 + s)
             push!(Js, col)
             push!(Vs, one(T))
@@ -223,7 +234,7 @@ function _recombination(parent::BSplineBasis{T}, left::BoundaryCondition,
         end
     end
 
-    return R, firstcol, lastcol
+    return R, firstcol, lastcol, unitrow
 end
 
 Base.parent(b::RecombinedBSplineBasis) = b.parent
@@ -282,26 +293,14 @@ function evaluate(b::RecombinedBSplineBasis{T}, j::Integer, x::Number,
     return v
 end
 
-nodes(b::RecombinedBSplineBasis) = _greville_from_columns(b)
-
-# The Greville abscissa of a recombined function is taken to be that of the parent function
-# it is anchored on -- the one with unit coefficient -- which for a pass-through column is the
-# parent's own. That keeps `nodes` a set of N points inside the domain, in increasing order,
-# and interlaced with the supports, which is what a collocation or a plotting grid wants. It
-# is not a Schoenberg-Whitney set for the recombined basis, and is not claimed to be.
-function _greville_from_columns(b::RecombinedBSplineBasis{T}) where {T}
-    ξ = nodes(b.parent)
-    R = b.R
-    rows = rowvals(R)
-    vals = nonzeros(R)
-    out = Vector{T}(undef, nbasis(b))
-    for j in 1:nbasis(b)
-        rng = nzrange(R, j)
-        k = rng[argmax(abs(vals[t]) for t in rng)]
-        out[j] = ξ[rows[k]]
-    end
-    return out
-end
+# The Greville abscissa of a recombined function is taken to be that of the parent function it
+# carries with unit coefficient, which for a pass-through column is the parent's own. The rows
+# are recorded by `_recombination`; they are the left block's 1:mL, the pass-through range, and
+# the right block's (Np-mR+1):Np, which are disjoint and increasing, so `nodes` is a set of N
+# *distinct* points inside the domain, in increasing order and interlaced with the supports,
+# which is what a collocation or a plotting grid wants. It is not a Schoenberg-Whitney set for
+# the recombined basis, and is not claimed to be.
+nodes(b::RecombinedBSplineBasis) = nodes(b.parent)[b.unitrow]
 
 _local_width(b::AbstractBSplineBasis) = degree(b) + 1
 _local_width(b::RecombinedBSplineBasis) = b.width

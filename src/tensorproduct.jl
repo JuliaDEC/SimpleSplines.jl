@@ -511,8 +511,9 @@ julia> abs(evaluate(B, û, (0.3, 1.1)) - sin(π * 0.3) * 1.1) < 1e-3
 true
 ```
 """
-struct TensorProductQuadrature{T, D, QS <: Tuple, MO <: KroneckerMass{T, D}}
-    basis::TensorProductBasis{T, D}
+struct TensorProductQuadrature{T, D, BT <: TensorProductBasis{T, D}, QS <: Tuple,
+    MO <: KroneckerMass{T, D}}
+    basis::BT
     quadratures::QS
     mass::MO
 
@@ -527,7 +528,7 @@ struct TensorProductQuadrature{T, D, QS <: Tuple, MO <: KroneckerMass{T, D}}
 
         qs = ntuple(k -> SplineQuadrature(B.bases[k]; nq = nqs[k], dmax = dmaxs[k]), D)
         mass = KroneckerMass(map(mass_operator, qs)...)
-        new{T, D, typeof(qs), typeof(mass)}(B, qs, mass)
+        new{T, D, typeof(B), typeof(qs), typeof(mass)}(B, qs, mass)
     end
 end
 

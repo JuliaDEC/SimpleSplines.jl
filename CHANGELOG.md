@@ -388,6 +388,21 @@ Found in review of the branch, not by the suite, and each now has a regression t
   enumerated — one less than the order of the lowest derivative either condition involves,
   minimised over the ends — and the suite checks it against an L² projection at every degree
   for eight conditions, monomials up to the reported degree being exact and the next one not.
+- **`nodes` on a recombined basis returned repeated points.** The abscissa of a recombined
+  function is meant to be that of the parent function it carries with unit coefficient; the code
+  took the one of largest magnitude instead, which for an end block is the anchor row every one
+  of that block's columns shares. On `Natural()` at `p = 3`, `n = 8` that gave 7 distinct points
+  out of 9 and on `Constraint(0, 0, 0, 1)` five, so a collocation matrix built on them was
+  singular — rank 7 and 5 against 9 on the correct abscissae. `nodes` is
+  `ContinuumArrays.grid`, so this reached anything that asked the basis for a grid. The rows are
+  now recorded by the recombination that creates them rather than recovered afterwards by
+  searching `R`, which also removes a tie that is not hypothetical: for `Neumann` the anchor
+  coefficient is exactly `1.0`, the two end derivatives being `∓p/h`, so searching a column for
+  the value `1` cannot tell the two rows apart.
+- **`TensorProductQuadrature` left its basis field abstract.** `basis::TensorProductBasis{T, D}`
+  does not fix the tuple of bases, so `size`, `contract` and `l2_projection` inferred `Any`
+  through it; a caller differing only in that took 19 936 bytes and 9.67 µs against 12 912 bytes
+  and 5.83 µs. It now carries the basis type as a parameter, as `SplineQuadrature` already did.
 - **The scalar `evaluate` of a tensor product allocated, and lost inference**, through two
   independent faults in one loop: a weight accumulated from inside the index `ntuple` is
   boxed, and `size(B, k)` reads the tuple of bases with a loop variable, which dispatches
@@ -451,6 +466,12 @@ Found in review of the branch, not by the suite, and each now has a regression t
 - A stale paragraph in the `SplineQuadrature` docstring described `Φ` as stored densely "so
   the contractions run as one BLAS call". It is a `SparseMatrixCSC`, and the comment beside
   the assembly argues correctly for the opposite.
+- The `mass_operator(::SplineQuadrature)` docstring still offered the choice as `CirculantMass`
+  on a uniform mesh and `FactorizedMass` otherwise, which adding `BandedMass` made wrong, and
+  `MassOperator`'s said "Both answer `\`, `ldiv!` and `Matrix`" after the same change took its
+  list to three.
+- `StaticArrays` was a dependency no source file used: the module's `using` was its only
+  occurrence in `src/`. It is a test dependency now rather than a package one.
 - `QuadratureRules` compat was `"0.1"`, which could not co-resolve with
   `CompactBasisFunctions`; it is now `"0.2"`.
 - `LinearAlgebra` compat was `"1.12.0"` alongside `julia = "1.10"`, which contradicted the
@@ -463,6 +484,24 @@ Found in review of the branch, not by the suite, and each now has a regression t
   a Julia, so the workflow failed before CompatHelper started; it now sets Julia up first.
 
 ## Open Issues
+
+### An ill-scaled `Robin` condition degrades silently
+
+`_recombination` anchors each end block on the last of the `m+1` functions the condition
+reaches, because only that one contributes to `a_{m+1} = c_m D^m φ_{m+1}(a)`. That anchor is
+nonzero whenever the leading coefficient `c_m` is — but *how* nonzero is the caller's, not the
+construction's. `Robin(1.0, 1e-20)` puts a small coefficient on the highest derivative, the
+anchor is then numerically zero, and the recombination coefficients `-a_t/a_{m+1}` overflow:
+the mass matrix comes out finite with a condition number already `Inf`, `cholesky(…;
+check = false)` reports `issuccess` on a matrix containing `Inf`, and the projection that
+follows looks plausible.
+
+A finiteness guard would catch only the most extreme case and is a symptom patch — the
+condition number is already useless well before anything becomes `Inf`. The cause-level fix is
+to **pivot**: anchor on whichever of the `m+1` candidates has the largest `|a_i|`, which bounds
+every entry of `R` by 1 by construction. That is deferred rather than done because it changes
+which basis functions the recombination produces, and with them `nodes` and every assembly
+conjugated by `R` — a design change to accept or decline, not a follow-up commit.
 
 ### `weighted_matrix` allocates a fresh matrix per call
 

@@ -20,7 +20,7 @@ Three representations are provided, and which one is built is decided by the bas
     Fourier transform to diagonalise, and the wrap-around entries put it outside the banded
     representation too. A sparse Cholesky factorisation is what is left.
 
-Both answer `\`, `ldiv!` and `Matrix`.
+All three answer `\`, `ldiv!` and `Matrix`.
 
 !!! note "Where this does and does not matter"
     A mass solve is a small part of the cost of these discretisations — at ``N = 384`` it is

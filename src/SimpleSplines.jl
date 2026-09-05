@@ -7,7 +7,6 @@ using LinearAlgebra
 using QuadratureRules
 using Random
 using SparseArrays
-using StaticArrays
 
 import Base: *
 
