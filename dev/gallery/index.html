@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Gallery · SimpleSplines.jl</title><meta name="title" content="Gallery · SimpleSplines.jl"/><meta property="og:title" content="Gallery · SimpleSplines.jl"/><meta property="twitter:title" content="Gallery · SimpleSplines.jl"/><meta name="description" content="Documentation for SimpleSplines.jl."/><meta property="og:description" content="Documentation for SimpleSplines.jl."/><meta property="twitter:description" content="Documentation for SimpleSplines.jl."/><meta property="og:url" content="https://JuliaDEC.github.io/SimpleSplines.jl/gallery/"/><meta property="twitter:url" content="https://JuliaDEC.github.io/SimpleSplines.jl/gallery/"/><link rel="canonical" href="https://JuliaDEC.github.io/SimpleSplines.jl/gallery/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script><link href="../assets/documentercitations/citations-hover.css" rel="stylesheet" type="text/css"/><link href="../assets/documentercitations/citations.css" rel="stylesheet" type="text/css"/><script src="../assets/documentercitations/citations-data.js"></script><script src="../assets/documentercitations/citations-hover.js"></script><script src="../assets/documentercitations/citations-backlinks.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">SimpleSplines.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../">Home</a></li><li><a class="tocitem" href="../tutorial/">Tutorial</a></li><li><span class="tocitem">Theory</span><ul><li><a class="tocitem" href="../theory/bsplines/">B-Splines</a></li><li><a class="tocitem" href="../theory/boundary/">Boundary Conditions</a></li><li><a class="tocitem" href="../theory/tensorproduct/">Tensor Products</a></li></ul></li><li><span class="tocitem">Usage</span><ul><li><a class="tocitem" href="../usage/meshes/">Meshes</a></li><li><a class="tocitem" href="../usage/bases/">Bases</a></li><li><a class="tocitem" href="../usage/boundary/">Boundary Conditions</a></li><li><a class="tocitem" href="../usage/quadrature/">Assembly</a></li><li><a class="tocitem" href="../usage/tensorproduct/">Tensor Products</a></li><li><a class="tocitem" href="../usage/splines/">Splines</a></li></ul></li><li class="is-active"><a class="tocitem" href>Gallery</a><ul class="internal"><li><a class="tocitem" href="#1.-L2-projection-converges-at-order-p1"><span>1. <span>$L^2$</span> projection converges at order <span>$p+1$</span></span></a></li><li><a class="tocitem" href="#2.-Which-polynomials-survive-which-boundary-condition"><span>2. Which polynomials survive which boundary condition</span></a></li><li><a class="tocitem" href="#3.-Structural-identities"><span>3. Structural identities</span></a></li><li><a class="tocitem" href="#4.-A-non-separable-function-in-two-dimensions"><span>4. A non-separable function in two dimensions</span></a></li><li><a class="tocitem" href="#5.-Poisson-in-one-dimension"><span>5. Poisson in one dimension</span></a></li><li><a class="tocitem" href="#6.-The-Dirichlet-eigenvalues"><span>6. The Dirichlet eigenvalues</span></a></li><li><a class="tocitem" href="#7.-Poisson-on-a-box"><span>7. Poisson on a box</span></a></li><li><a class="tocitem" href="#8.-Depositing-particles-onto-a-basis"><span>8. Depositing particles onto a basis</span></a></li></ul></li><li><a class="tocitem" href="../library/">Library</a></li><li><a class="tocitem" href="../references/">References</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Gallery</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Gallery</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/JuliaDEC/SimpleSplines.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/JuliaDEC/SimpleSplines.jl/blob/main/docs/src/gallery.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Gallery"><a class="docs-heading-anchor" href="#Gallery">Gallery</a><a id="Gallery-1"></a><a class="docs-heading-anchor-permalink" href="#Gallery" title="Permalink"></a></h1><p>Eight problems, solved and measured. Every number and figure on this page is produced when the manual is built, so nothing here is a claim about what the package should do.</p><pre><code class="language-julia hljs">using SimpleSplines
+using CairoMakie
+using LinearAlgebra</code></pre><h2 id="1.-L2-projection-converges-at-order-p1"><a class="docs-heading-anchor" href="#1.-L2-projection-converges-at-order-p1">1. <span>$L^2$</span> projection converges at order <span>$p+1$</span></a><a id="1.-L2-projection-converges-at-order-p1-1"></a><a class="docs-heading-anchor-permalink" href="#1.-L2-projection-converges-at-order-p1" title="Permalink"></a></h2><p>The projection of a smooth function onto a degree-<span>$p$</span> spline space is accurate to <span>$O(h^{p+1})$</span>. The mesh here is a <a href="../library/#SimpleSplines.GradedMesh"><code>GradedMesh</code></a> rather than a uniform one, deliberately: refining a graded mesh gives a genuine <em>family</em>, so a rate measured across it means something, whereas a uniform mesh would make every assembly circulant and could confirm the rate for the wrong reason.</p><pre><code class="language-julia hljs">target(x) = sin(x)
+sample = range(0, 2π; length = 400)[1:399]
+
+function projection_error(p, n)
+    b = BSplineBasis(GradedMesh(n, 2π), p, Periodic())
+    q = SplineQuadrature(b; nq = quadrature_order(p) + 3)
+    û = l2_projection(q, target)
+    (meshwidth(b), maximum(abs(evaluate(b, û, x) - target(x)) for x in sample))
+end
+
+ns = (8, 16, 32, 64)
+for p in 1:4
+    hs = Float64[]
+    es = Float64[]
+    for n in ns
+        h, e = projection_error(p, n)
+        push!(hs, h)
+        push!(es, e)
+    end
+    rate = log(es[end - 1] / es[end]) / log(hs[end - 1] / hs[end])
+    println(&quot;p = &quot;, p, &quot;   error at n = 64: &quot;, es[end],
+        &quot;   measured rate: &quot;, round(rate; digits = 3), &quot;   (expected &quot;, p + 1, &quot;)&quot;)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">p = 1   error at n = 64: 0.0007708743325764988   measured rate: 2.034   (expected 2)
+p = 2   error at n = 64: 9.71063462779087e-6   measured rate: 3.145   (expected 3)
+p = 3   error at n = 64: 1.4650848956243578e-7   measured rate: 4.032   (expected 4)
+p = 4   error at n = 64: 3.1619112259018145e-9   measured rate: 5.063   (expected 5)</code></pre><pre><code class="language-julia hljs">fig = Figure(size = (620, 420))
+ax = Axis(fig[1, 1]; xscale = log10, yscale = log10, xlabel = &quot;h&quot;, ylabel = &quot;max error&quot;,
+    title = &quot;L² projection of sin on a graded mesh&quot;)
+for p in 1:4
+    data = [projection_error(p, n) for n in ns]
+    hh, ee = first.(data), last.(data)
+    scatterlines!(ax, hh, ee; label = &quot;p = $(p)&quot;)
+    lines!(ax, hh, ee[1] .* (hh ./ hh[1]) .^ (p + 1);
+        color = (:black, 0.35), linestyle = :dash)
+end
+axislegend(ax; position = :rb)
+fig</code></pre><img src="73804269.png" alt="Example block output"/><p>The dashed lines are <span>$h^{p+1}$</span> for reference.</p><h2 id="2.-Which-polynomials-survive-which-boundary-condition"><a class="docs-heading-anchor" href="#2.-Which-polynomials-survive-which-boundary-condition">2. Which polynomials survive which boundary condition</a><a id="2.-Which-polynomials-survive-which-boundary-condition-1"></a><a class="docs-heading-anchor-permalink" href="#2.-Which-polynomials-survive-which-boundary-condition" title="Permalink"></a></h2><p>An <span>$L^2$</span> projection reproduces a polynomial exactly when that polynomial lies in the span of the basis, and <a href="../library/#SimpleSplines.polynomial_reproduction"><code>polynomial_reproduction</code></a> says which do. This is what decides whether a conservation law survives a discretisation, so it is worth seeing rather than trusting.</p><pre><code class="language-julia hljs">function reproduces(bc, p, k)
+    b = BSplineBasis(UniformMesh(8, 0 .. 1), p, bc)
+    q = SplineQuadrature(b)
+    û = l2_projection(q, x -&gt; x^k)
+    maximum(abs(evaluate(b, û, x) - x^k) for x in range(0, 1; length = 201))
+end
+
+conditions = (Free(), Periodic(), Dirichlet(), Neumann(), Natural(),
+    Constraint(0, 0, 0, 1), Robin(1.0, 1.0))
+println(rpad(&quot;condition&quot;, 24), rpad(&quot;reproduces&quot;, 12),
+    &quot;error on 1, x, x², x³, x⁴  (p = 4)&quot;)
+for bc in conditions
+    r = polynomial_reproduction(BSplineBasis(UniformMesh(8, 0 .. 1), 4, bc))
+    errs = [reproduces(bc, 4, k) for k in 0:4]
+    println(rpad(repr(bc), 24), rpad(r, 12),
+        join((rpad(e &lt; 1e-9 ? &quot;exact&quot; : string(round(e; sigdigits = 2)), 10)
+        for e in errs)))
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">condition               reproduces  error on 1, x, x², x³, x⁴  (p = 4)
+Free()                  4           exact     exact     exact     exact     exact
+Periodic()              0           exact     0.5       0.53      0.55      0.56
+Dirichlet()             -1          1.0       1.0       1.0       1.0       1.0
+Neumann()               0           exact     0.014     0.028     0.042     0.055
+Natural()               1           exact     exact     0.00068   0.002     0.004
+Constraint(0, 0, 0, 1)  2           exact     exact     exact     8.8e-5    0.00036
+Robin(1.0, 1.0)         -1          0.014     0.027     0.041     0.055     0.069</code></pre><p>Read the table along each row: the monomials up to degree <code>r</code> come back exactly, and the one after does not. <code>Free</code> reproduces everything up to its degree, <code>Periodic</code> only the constants (<span>$x$</span> is not periodic), <code>Dirichlet</code> nothing at all, and <code>Constraint(0, 0, 0, 1)</code> — the condition <span>$u&#39;&#39;&#39; = 0$</span> — reproduces up to <span>$x^2$</span>.</p><h2 id="3.-Structural-identities"><a class="docs-heading-anchor" href="#3.-Structural-identities">3. Structural identities</a><a id="3.-Structural-identities-1"></a><a class="docs-heading-anchor-permalink" href="#3.-Structural-identities" title="Permalink"></a></h2><p>Three identities that hold exactly, and one that holds only on a uniform mesh. The point of the <a href="../library/#SimpleSplines.RandomMesh"><code>RandomMesh</code></a> column is that a check run only on a <a href="../library/#SimpleSplines.UniformMesh"><code>UniformMesh</code></a> confirms a property whose proof does not need the mesh at all — the assemblies there are circulant.</p><pre><code class="language-julia hljs">meshes = (&quot;uniform&quot; =&gt; UniformMesh(16, 2π),
+    &quot;graded&quot; =&gt; GradedMesh(16, 2π),
+    &quot;random&quot; =&gt; RandomMesh(16, 2π))
+
+println(rpad(&quot;&quot;, 10), rpad(&quot;S + Sᵀ&quot;, 12), rpad(&quot;∫φ&#39;φ&#39;&#39; + ∫φφ&#39;&#39;&#39;&quot;, 18),
+    rpad(&quot;K·1&quot;, 12), &quot;λ_min(K)&quot;)
+for (name, m) in meshes
+    q = SplineQuadrature(BSplineBasis(m, 3, Periodic()))
+    S = derivative_matrix(q)
+    K = stiffness_matrix(q)
+    println(rpad(name, 10),
+        rpad(round(maximum(abs, S + S&#39;); sigdigits = 2), 12),
+        rpad(round(maximum(abs, mixed_matrix(q, 1, 2) + mixed_matrix(q, 0, 3));
+                sigdigits = 2), 18),
+        rpad(round(maximum(abs, K * ones(nbasis(q))); sigdigits = 2), 12),
+        round(minimum(eigvals(Symmetric(Matrix(K)))); sigdigits = 2))
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">          S + Sᵀ      ∫φ&#39;φ&#39;&#39; + ∫φφ&#39;&#39;&#39;   K·1         λ_min(K)
+uniform   6.7e-16     3.0e-14           8.9e-16     1.2e-15
+graded    6.7e-16     1.4e-14           6.8e-16     -5.9e-16
+random    7.9e-16     4.5e-14           1.3e-15     -8.6e-16</code></pre><ul><li><span>$S + S^{\mathsf T} = 0$</span>: integration by parts over a torus leaves no boundary term.</li><li><span>$\int \phi&#39;\phi&#39;&#39; + \int \phi\phi&#39;&#39;&#39; = 0$</span>: the same, one derivative higher. This is what lets a <span>$\mathcal{C}^2$</span> cubic basis carry a third-order operator.</li><li><span>$\mathbb{K}\mathbf{1} = 0$</span> and <span>$\lambda_{\min}(\mathbb{K}) = 0$</span>: the constants are in the kernel of the stiffness matrix, because they are in the span of the basis.</li></ul><p>And the one that is <em>not</em> mesh-independent — the antisymmetry needs the quadrature to integrate a total derivative of degree <span>$2p-1$</span> exactly, i.e. <span>$n_q \ge p$</span>:</p><pre><code class="language-julia hljs">for nq in 2:4
+    qu = SplineQuadrature(BSplineBasis(UniformMesh(16, 2π), 3, Periodic()); nq = nq)
+    qr = SplineQuadrature(BSplineBasis(RandomMesh(16, 2π), 3, Periodic()); nq = nq)
+    println(&quot;nq = &quot;, nq,
+        &quot;   uniform &quot;, rpad(round(maximum(abs,
+                derivative_matrix(qu) + derivative_matrix(qu)&#39;); sigdigits = 2), 12),
+        &quot;   random &quot;, round(maximum(abs,
+            derivative_matrix(qr) + derivative_matrix(qr)&#39;); sigdigits = 2))
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">nq = 2   uniform 2.4e-15        random 0.0093
+nq = 3   uniform 8.3e-16        random 1.1e-15
+nq = 4   uniform 5.0e-16        random 1.9e-15</code></pre><p>At <code>nq = 2</code> on a random mesh the defect is <span>$\approx 10^{-2}$</span>, not <span>$10^{-15}$</span>. On the uniform mesh it is machine precision at every <code>nq</code>, which is why the check has to be run somewhere else.</p><h2 id="4.-A-non-separable-function-in-two-dimensions"><a class="docs-heading-anchor" href="#4.-A-non-separable-function-in-two-dimensions">4. A non-separable function in two dimensions</a><a id="4.-A-non-separable-function-in-two-dimensions-1"></a><a class="docs-heading-anchor-permalink" href="#4.-A-non-separable-function-in-two-dimensions" title="Permalink"></a></h2><p>The tensor-product basis is separable; the function projected onto it need not be.</p><pre><code class="language-julia hljs">gfun(x) = sin(x[1]) * exp(-x[2]^2 / 8) + cos(2x[1]) * x[2] / 20
+
+grid2 = [(2π * (i - 0.5) / 37, -10 + 20 * (j - 0.5) / 41) for i in 1:37, j in 1:41]
+errs2 = Float64[]
+for n in (8, 16, 32)
+    Bn = BSplineBasis(UniformMesh(n, 0 .. 2π), 3, Periodic()) ⊗
+         BSplineBasis(UniformMesh(n, -10 .. 10), 3)
+    Qn = TensorProductQuadrature(Bn)
+    ĝ = l2_projection(Qn, gfun)
+    push!(errs2, maximum(abs(evaluate(Bn, ĝ, x) - gfun(x)) for x in grid2))
+end
+errs2, errs2[1] / errs2[2], errs2[2] / errs2[3]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([0.011394115640471048, 0.0010196821014797353, 4.5354427057886504e-5], 11.174184212840663, 22.482526351359272)</code></pre><p>Cubics on both axes, so the error should fall by about <span>$2^4 = 16$</span> per refinement.</p><pre><code class="language-julia hljs">Bshow = BSplineBasis(UniformMesh(24, 0 .. 2π), 3, Periodic()) ⊗
+        BSplineBasis(UniformMesh(24, -10 .. 10), 3)
+ĝshow = l2_projection(TensorProductQuadrature(Bshow), gfun)
+gx = range(0, 2π; length = 121)
+gy = range(-10, 10; length = 121)
+Zh = [evaluate(Bshow, ĝshow, (x, y)) for x in gx, y in gy]
+Ze = [gfun((x, y)) for x in gx, y in gy]
+
+fig = Figure(size = (780, 320))
+ax1 = Axis(fig[1, 1]; xlabel = &quot;x₁&quot;, ylabel = &quot;x₂&quot;, title = &quot;projection, n = 24&quot;)
+hm = heatmap!(ax1, gx, gy, Zh)
+Colorbar(fig[1, 2], hm)
+ax2 = Axis(fig[1, 3]; xlabel = &quot;x₁&quot;, ylabel = &quot;x₂&quot;, title = &quot;error&quot;)
+he = heatmap!(ax2, gx, gy, Zh .- Ze; colormap = :balance)
+Colorbar(fig[1, 4], he)
+fig</code></pre><img src="394146f0.png" alt="Example block output"/><h2 id="5.-Poisson-in-one-dimension"><a class="docs-heading-anchor" href="#5.-Poisson-in-one-dimension">5. Poisson in one dimension</a><a id="5.-Poisson-in-one-dimension-1"></a><a class="docs-heading-anchor-permalink" href="#5.-Poisson-in-one-dimension" title="Permalink"></a></h2><p class="math-container">\[-u&#39;&#39; = f \ \text{ on } (0,1) , \qquad u(0) = u(1) = 0 ,\]</p><p>discretised by Galerkin on a <a href="../library/#SimpleSplines.Dirichlet"><code>Dirichlet</code></a>-recombined basis: <span>$\mathbb{K}\hat{u} = \mathbf{b}$</span> with <span>$\mathbb{K} = \int \psi_k&#39;\psi_l&#39;$</span> the <a href="../library/#SimpleSplines.stiffness_matrix"><code>stiffness_matrix</code></a> and <span>$b_i = \int f \psi_i$</span>. There is no separate step that imposes the boundary condition — the basis already has one function fewer per end, so <code>K</code> <em>is</em> the matrix of the constrained problem.</p><pre><code class="language-julia hljs">exact(x) = sinpi(x)
+rhsfun(x) = π^2 * sinpi(x)
+
+function poisson1d(p, n)
+    b = BSplineBasis(UniformMesh(n, 0 .. 1), p, Dirichlet())
+    q = SplineQuadrature(b)
+    K = stiffness_matrix(q)
+    load = basis_values(q, 0) * (quadrature_weights(q) .* rhsfun.(quadrature_nodes(q)))
+    û = Matrix(K) \ load
+    (b, û, maximum(abs(evaluate(b, û, x) - exact(x))
+                   for x in range(0, 1; length = 401)))
+end
+
+for p in 2:4
+    es = [poisson1d(p, n)[3] for n in (8, 16, 32, 64)]
+    println(&quot;p = &quot;, p, &quot;   errors &quot;, round.(es; sigdigits = 3),
+        &quot;   rates &quot;, round.([log2(es[i] / es[i + 1]) for i in 1:3]; digits = 2))
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">p = 2   errors [0.000491, 6.07e-5, 7.57e-6, 9.46e-7]   rates [3.01, 3.0, 3.0]
+p = 3   errors [3.44e-5, 2.08e-6, 1.29e-7, 8.07e-9]   rates [4.05, 4.01, 4.0]
+p = 4   errors [2.24e-6, 7.47e-8, 2.39e-9, 7.5e-11]   rates [4.91, 4.97, 4.99]</code></pre><p>Order <span>$p+1$</span>, as for the projection. The <code>Dirichlet</code> condition holds identically:</p><pre><code class="language-julia hljs">bP, ûP, _ = poisson1d(3, 16)
+uh = Spline(bP, ûP)
+uh(0.0), uh(1.0), uh(0.5)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(0.0, 0.0, 1.0000020817761017)</code></pre><pre><code class="language-julia hljs">fig = Figure(size = (780, 340))
+xs = range(0, 1; length = 401)
+ax1 = Axis(fig[1, 1]; xlabel = &quot;x&quot;, title = &quot;-u&#39;&#39; = π² sin(πx),  p = 3, n = 16&quot;)
+lines!(ax1, xs, exact.(xs); label = &quot;exact&quot;)
+lines!(ax1, xs, uh.(xs); linestyle = :dash, linewidth = 3, label = &quot;Galerkin&quot;)
+ax2 = Axis(fig[1, 2]; xlabel = &quot;x&quot;, title = &quot;error&quot;)
+lines!(ax2, xs, uh.(xs) .- exact.(xs))
+Legend(fig[2, 1:2], ax1; orientation = :horizontal, framevisible = false)
+fig</code></pre><img src="ece98abe.png" alt="Example block output"/><h3 id="A-variable-coefficient-costs-nothing-extra"><a class="docs-heading-anchor" href="#A-variable-coefficient-costs-nothing-extra">A variable coefficient costs nothing extra</a><a id="A-variable-coefficient-costs-nothing-extra-1"></a><a class="docs-heading-anchor-permalink" href="#A-variable-coefficient-costs-nothing-extra" title="Permalink"></a></h3><p class="math-container">\[-\big(a(x) u&#39;\big)&#39; = f , \qquad a(x) = 1 + x^2 ,\]</p><p>is the same problem with <a href="../library/#SimpleSplines.weighted_matrix"><code>weighted_matrix</code></a><code>(q, a, 1, 1)</code> in place of the stiffness matrix — one weighted contraction of the same tabulation.</p><pre><code class="language-julia hljs">acoef(x) = 1 + x^2
+fvar(x) = π^2 * acoef(x) * sinpi(x) - 2x * π * cospi(x)     # so that u = sin(πx) again
+
+function poisson1d_variable(p, n)
+    b = BSplineBasis(UniformMesh(n, 0 .. 1), p, Dirichlet())
+    q = SplineQuadrature(b)
+    A = weighted_matrix(q, acoef, 1, 1)
+    load = basis_values(q, 0) * (quadrature_weights(q) .* fvar.(quadrature_nodes(q)))
+    û = Matrix(A) \ load
+    maximum(abs(evaluate(b, û, x) - exact(x)) for x in range(0, 1; length = 401))
+end
+
+for p in 2:4
+    es = [poisson1d_variable(p, n) for n in (8, 16, 32, 64)]
+    println(&quot;p = &quot;, p, &quot;   errors &quot;, round.(es; sigdigits = 3),
+        &quot;   rates &quot;, round.([log2(es[i] / es[i + 1]) for i in 1:3]; digits = 2))
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">p = 2   errors [0.000518, 6.25e-5, 7.69e-6, 9.53e-7]   rates [3.05, 3.02, 3.01]
+p = 3   errors [3.45e-5, 2.08e-6, 1.29e-7, 8.07e-9]   rates [4.05, 4.01, 4.0]
+p = 4   errors [2.29e-6, 7.59e-8, 2.41e-9, 7.53e-11]   rates [4.91, 4.98, 5.0]</code></pre><h2 id="6.-The-Dirichlet-eigenvalues"><a class="docs-heading-anchor" href="#6.-The-Dirichlet-eigenvalues">6. The Dirichlet eigenvalues</a><a id="6.-The-Dirichlet-eigenvalues-1"></a><a class="docs-heading-anchor-permalink" href="#6.-The-Dirichlet-eigenvalues" title="Permalink"></a></h2><p class="math-container">\[-u&#39;&#39; = \lambda u \ \text{ on } (0,1) , \qquad u(0) = u(1) = 0 ,
+\qquad \lambda_k = (k\pi)^2 ,\]</p><p>is the generalised eigenproblem <span>$\mathbb{K} v = \lambda \mathbb{M} v$</span>. The mass matrix is not the identity — the basis is not orthonormal — so this is a genuine pencil and not a plain eigenproblem.</p><pre><code class="language-julia hljs">exact_λ = [(k * π)^2 for k in 1:6]
+for p in 2:4
+    b = BSplineBasis(UniformMesh(32, 0 .. 1), p, Dirichlet())
+    q = SplineQuadrature(b)
+    λ = eigvals(Symmetric(Matrix(stiffness_matrix(q))),
+        Symmetric(Matrix(mass_matrix(q))))
+    rel = abs.(λ[1:6] .- exact_λ) ./ exact_λ
+    println(&quot;p = &quot;, p, &quot;   relative error on λ₁…λ₆: &quot;, round.(rel; sigdigits = 2))
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">p = 2   relative error on λ₁…λ₆: [1.3e-7, 2.1e-6, 1.1e-5, 3.4e-5, 8.5e-5, 0.00018]
+p = 3   relative error on λ₁…λ₆: [3.0e-11, 1.9e-9, 2.3e-8, 1.3e-7, 5.2e-7, 1.6e-6]
+p = 4   relative error on λ₁…λ₆: [6.6e-14, 1.8e-12, 4.8e-11, 5.1e-10, 3.2e-9, 1.5e-8]</code></pre><p>Every eigenvalue is approximated from <strong>above</strong> — a Galerkin discretisation of a symmetric positive problem restricts the Rayleigh quotient to a subspace — and the error grows with the mode number, since the higher modes are the ones the mesh does not resolve.</p><pre><code class="language-julia hljs">b6 = BSplineBasis(UniformMesh(32, 0 .. 1), 3, Dirichlet())
+q6 = SplineQuadrature(b6)
+λ6, V6 = eigen(Symmetric(Matrix(stiffness_matrix(q6))),
+    Symmetric(Matrix(mass_matrix(q6))))
+all(λ6[1:6] .≥ exact_λ)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><pre><code class="language-julia hljs">fig = Figure(size = (780, 300))
+ax1 = Axis(fig[1, 1]; xlabel = &quot;x&quot;, title = &quot;the first three eigenfunctions&quot;)
+xs = range(0, 1; length = 401)
+for k in 1:3
+    v = V6[:, k]
+    v ./= maximum(abs, [evaluate(b6, v, x) for x in xs])
+    lines!(ax1, xs, [evaluate(b6, v, x) for x in xs]; label = &quot;k = $(k)&quot;)
+end
+ylims!(ax1, -1.1, 1.55)
+axislegend(ax1; position = :rt, orientation = :horizontal, framevisible = false)
+ax2 = Axis(fig[1, 2]; yscale = log10, xlabel = &quot;k&quot;, ylabel = &quot;relative error&quot;,
+    title = &quot;eigenvalue error, n = 32&quot;)
+for p in 2:4
+    bb = BSplineBasis(UniformMesh(32, 0 .. 1), p, Dirichlet())
+    qq = SplineQuadrature(bb)
+    ll = eigvals(Symmetric(Matrix(stiffness_matrix(qq))),
+        Symmetric(Matrix(mass_matrix(qq))))
+    scatterlines!(ax2, 1:10, abs.(ll[1:10] .- [(k * π)^2 for k in 1:10]) ./
+                            [(k * π)^2 for k in 1:10]; label = &quot;p = $(p)&quot;)
+end
+axislegend(ax2; position = :rb)
+fig</code></pre><img src="b5d046f6.png" alt="Example block output"/><h2 id="7.-Poisson-on-a-box"><a class="docs-heading-anchor" href="#7.-Poisson-on-a-box">7. Poisson on a box</a><a id="7.-Poisson-on-a-box-1"></a><a class="docs-heading-anchor-permalink" href="#7.-Poisson-on-a-box" title="Permalink"></a></h2><p class="math-container">\[-\Delta u = f \ \text{ on } (0,1)^2 , \qquad u = 0 \text{ on } \partial\Omega .\]</p><p>The Laplacian <em>is</em> separable, as a sum of <span>$D$</span> separable terms: with <span>$\mathbb{K}^{(k)}$</span> and <span>$\mathbb{M}^{(k)}$</span> the one-dimensional stiffness and mass matrices,</p><p class="math-container">\[\mathbb{A} = \mathbb{M}^{(2)} \otimes \mathbb{K}^{(1)}
+           + \mathbb{K}^{(2)} \otimes \mathbb{M}^{(1)} ,\]</p><p>in the first-axis-fastest ordering this package uses throughout. The right-hand side is the <a href="../library/#SimpleSplines.contract"><code>contract</code></a>ion of <span>$f$</span> sampled on the quadrature grid.</p><pre><code class="language-julia hljs">exact2(x) = sinpi(x[1]) * sinpi(x[2])
+rhs2(x) = 2π^2 * sinpi(x[1]) * sinpi(x[2])
+
+function poisson2d(p, n)
+    B = BSplineBasis(UniformMesh(n, 0 .. 1), p, Dirichlet()) ⊗
+        BSplineBasis(UniformMesh(n, 0 .. 1), p, Dirichlet())
+    Q = TensorProductQuadrature(B)
+    q1, q2 = quadratures(Q)
+    A = kron(mass_matrix(q2), stiffness_matrix(q1)) +
+        kron(stiffness_matrix(q2), mass_matrix(q1))
+    L = contract(Q, quadrature_sample(Q, rhs2))
+    û = reshape(Matrix(A) \ vec(L), size(B))
+    g = range(0, 1; length = 41)
+    (B, û, maximum(abs(evaluate(B, û, (x, y)) - exact2((x, y))) for x in g, y in g))
+end
+
+for n in (4, 8, 16)
+    println(&quot;n = &quot;, rpad(n, 3), &quot;  error = &quot;, poisson2d(3, n)[3])
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">n = 4    error = 0.001342063572971508
+n = 8    error = 6.902727245994278e-5
+n = 16   error = 4.165494439600792e-6</code></pre><pre><code class="language-julia hljs">B7, û7, err7 = poisson2d(3, 16)
+gg = range(0, 1; length = 101)
+Z7 = [evaluate(B7, û7, (x, y)) for x in gg, y in gg]
+
+fig = Figure(size = (780, 320))
+ax1 = Axis3(fig[1, 1]; xlabel = &quot;x₁&quot;, ylabel = &quot;x₂&quot;, zlabel = &quot;u&quot;,
+    title = &quot;-Δu = 2π² sin πx₁ sin πx₂&quot;)
+surface!(ax1, gg, gg, Z7)
+ax2 = Axis(fig[1, 2]; xlabel = &quot;x₁&quot;, ylabel = &quot;x₂&quot;, aspect = 1, title = &quot;error&quot;)
+he = heatmap!(ax2, gg, gg, Z7 .- [exact2((x, y)) for x in gg, y in gg];
+    colormap = :balance)
+Colorbar(fig[1, 3], he)
+fig</code></pre><img src="792fcf66.png" alt="Example block output"/><p>The Dirichlet condition holds on all four sides, again by construction:</p><pre><code class="language-julia hljs">maximum(abs, [evaluate(B7, û7, pt)
+              for pt in ((0.0, 0.37), (1.0, 0.37), (0.42, 0.0), (0.42, 1.0))])</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">0.0</code></pre><p>Note what was <em>not</em> done here: the <span>$\mathbb{A}$</span> above was assembled densely, because the example solves it with a dense factorisation. That is fine at <span>$n = 16$</span> and is not how a real solver would work — the Laplacian is a sum of Kronecker products, so it is amenable to a fast diagonalisation or a matrix-free Krylov method. The <strong>mass</strong> matrix, by contrast, is never assembled at all:</p><pre><code class="language-julia hljs">op7 = mass_operator(TensorProductQuadrature(B7))
+size(op7), map(f -&gt; nameof(typeof(f)), mass_factors(op7))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">((289, 289), (:BandedMass, :BandedMass))</code></pre><h2 id="8.-Depositing-particles-onto-a-basis"><a class="docs-heading-anchor" href="#8.-Depositing-particles-onto-a-basis">8. Depositing particles onto a basis</a><a id="8.-Depositing-particles-onto-a-basis-1"></a><a class="docs-heading-anchor-permalink" href="#8.-Depositing-particles-onto-a-basis" title="Permalink"></a></h2><p>The reverse of evaluation: given weights at scattered positions, accumulate them into coefficients. This is the loop <a href="../library/#SimpleSplines.evaluate_all!"><code>evaluate_all!</code></a> and <a href="../library/#SimpleSplines.findcell"><code>findcell</code></a> exist for, and it allocates nothing per particle.</p><pre><code class="language-julia hljs">using Random
+Random.seed!(42)
+
+bdep = BSplineBasis(UniformMesh(32, 0 .. 1), 3, Periodic())
+qdep = SplineQuadrature(bdep)
+
+positions = rand(20_000)
+weights = fill(1 / 20_000, 20_000)
+
+function deposit!(coeffs, b, positions, weights)
+    fill!(coeffs, 0)
+    scratch = zeros(local_width(b))
+    for (x, w) in zip(positions, weights)
+        j₀ = evaluate_all!(scratch, b, x)
+        for t in eachindex(scratch)
+            i = basis_index(b, j₀ + t - 1)
+            1 ≤ i ≤ nbasis(b) || continue
+            coeffs[i] += w * scratch[t]
+        end
+    end
+    return coeffs
+end
+
+load = deposit!(zeros(nbasis(bdep)), bdep, positions, weights)
+sum(load), (@allocated deposit!(load, bdep, positions, weights))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(0.9999999999999999, 96)</code></pre><p>The sum is exactly the total weight, by the partition of unity, and the whole sweep over 20 000 particles allocates only the one scratch buffer. What comes out is the <em>load vector</em> <span>$\int f \phi_i$</span>, so a density needs one mass solve:</p><pre><code class="language-julia hljs">density = mass_operator(qdep) \ load
+fdep = Spline(bdep, density)
+mean_density = 1.0                                  # uniform on [0,1], total weight 1
+maximum(abs(fdep(x) - mean_density) for x in range(0, 1; length = 401))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">0.11269190452241085</code></pre><pre><code class="language-julia hljs">fig = Figure(size = (780, 340))
+xs = range(0, 1; length = 401)
+ax = Axis(fig[1, 1]; xlabel = &quot;x&quot;, ylabel = &quot;f(x)&quot;,
+    title = &quot;20 000 uniform particles deposited onto a cubic periodic basis, n = 32&quot;)
+lines!(ax, xs, fdep.(xs); label = &quot;reconstructed density&quot;)
+hlines!(ax, [1.0]; color = :black, linestyle = :dash, label = &quot;exact&quot;)
+Legend(fig[2, 1], ax; orientation = :horizontal, framevisible = false)
+fig</code></pre><img src="6f4ffd70.png" alt="Example block output"/><p>The wobble is Monte-Carlo noise, not a discretisation error: the deposition itself is exact, and the sum above is the total weight to the last bit. Its root-mean-square size is <span>$\sqrt{n/N_p}$</span> — about four per cent for <span>$20\,000$</span> particles in <span>$32$</span> cells, with the maximum over the domain a few times that. Refining the basis makes it worse rather than better, since it puts fewer particles in each cell.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../usage/splines/">« Splines</a><a class="docs-footer-nextpage" href="../library/">Library »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Monday 7 September 2026 09:36">Monday 7 September 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
