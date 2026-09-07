@@ -38,8 +38,11 @@ Written as it stands the recursion is *unmemoised*, so it splits into two subpro
 level and the cost of one value is ``O(2^p)`` rather than ``O(p^2)``. That is deliberate — the
 point of this function is to be the formula, not to be fast — but it is the reason
 [`evaluate_all!`](@ref) exists rather than a convenience wrapper around a loop over this one.
-Measured at 20 000 evaluations on a 40-cell mesh: 27 ns per call at ``p = 3`` against 17 ns for
-the *whole block* through [`evaluate_all`](@ref), and 15.8 µs against 103 ns at ``p = 12``.
+Measured at 26 ns per call at ``p = 3`` against 21 ns for the *whole block* through
+[`evaluate_all`](@ref), and 15.5 µs against 104 ns at ``p = 12``; doubling the degree from
+``6`` to ``12`` costs the single value 64 times more and the block 2.6 times more, which is
+``2^6`` against ``(12/6)^2``. `scripts/evaluate_cost_scaling.jl` measures it and fails if the
+two exponents stop being distinguishable.
 
 A knot span of zero length — a repeated knot — contributes nothing, which is what makes the
 recursion well defined at a knot of multiplicity greater than one. The guard is on the span
@@ -577,7 +580,8 @@ This is the reference path, one basis function at a time, and it runs the recurs
 rather than through a faster equivalent: one value costs ``O(2^p)``. A loop that needs every
 nonzero function at a point — a particle deposition, or a matrix assembly — should use
 [`evaluate_all`](@ref) instead, which is ``O(p^2)`` for the whole block of `p+1` together. The
-two are within a factor of two at ``p = 3`` and a factor of 150 apart at ``p = 12``.
+two are within a third of each other at ``p = 3`` and a factor of 150 apart at ``p = 12``; see
+`scripts/evaluate_cost_scaling.jl`.
 """
 function evaluate(b::BSplineBasis{T}, j::Integer, x::Number, d::Integer = 0) where {T}
     @boundscheck (1 ≤ j ≤ nbasis(b)) || throw(BoundsError(b, j))
@@ -704,13 +708,14 @@ half-open except for the last, which is closed. A point outside the domain is cl
 nearest cell for a bounded mesh; on a [`PeriodicBSplineBasis`](@ref) reduce `x` onto the
 domain first.
 
-Called on a basis rather than on a mesh it allocates nothing, the breakpoints being cached in
-the basis; on a [`UniformMesh`](@ref) it is a division that does not read them at all.
+It allocates nothing: a basis and a non-uniform mesh both hand over a stored breakpoint
+vector, and on a [`UniformMesh`](@ref) the cell index is a division that does not read the
+breakpoints at all.
 """
 findcell(m::Mesh, x::Number) = _findcell(breakpoints(m), ncells(m), x)
 
-# On a uniform mesh the cell index is a division, with no need for the breakpoint vector at
-# all. Kept as its own method because it is the one a particle loop actually takes.
+# Kept as its own method, rather than left to the generic one above, because it is the method
+# a particle loop actually takes.
 function findcell(m::UniformMesh, x::Number)
     n = ncells(m)
     t = (x - m.a) / (m.b - m.a)
@@ -719,7 +724,6 @@ function findcell(m::UniformMesh, x::Number)
     return min(floor(Int, t * n) + 1, n)
 end
 
-# Reads the breakpoints cached in the basis, so this allocates nothing.
 findcell(b::AbstractBSplineBasis, x::Number) = _findcell(breakpoints(b), ncells(b), x)
 findcell(b::BSplineBasis{T, <:UniformMesh}, x::Number) where {T} = findcell(mesh(b), x)
 function findcell(b::PeriodicBSplineBasis{T, <:UniformMesh}, x::Number) where {T}
@@ -953,8 +957,7 @@ Base.adjoint(b::AbstractBSplineBasis) = Derivative(axes(b, 1)) * b
 
 The [`BSplineDerivative`](@ref) of a [`PeriodicBSplineBasis`](@ref) specifically.
 
-Retained so that code written against the periodic-only version of this package keeps
-resolving; new code should dispatch on [`BSplineDerivative`](@ref), which covers all three
+A compatibility alias. Dispatch on [`BSplineDerivative`](@ref) instead, which covers all three
 bases.
 """
 const PeriodicBSplineDerivative = QMul2{<:Derivative, <:PeriodicBSplineBasis}

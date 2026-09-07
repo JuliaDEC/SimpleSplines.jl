@@ -328,15 +328,19 @@ The first row is worth dwelling on, because it is a deliberate choice and not an
 every level with no memoisation, so that the assembly built on it doubles as a check of the
 formula. That costs ``O(2^p)`` per value. [`evaluate_all!`](@ref) uses de Boor's triangular
 scheme, which is ``O(p^2)`` for *all* ``p+1`` functions together — so the block form is not
-merely `p+1` times cheaper, it has a different exponent. Measured over 20 000 evaluations on a
-40-cell mesh:
+merely `p+1` times cheaper, it has a different exponent:
 
-| ``p`` | `evaluate`, one function | `evaluate_all`, the whole block |
-|--:|--:|--:|
-| 3 | 27 ns | 17 ns |
-| 6 | 232 ns | 37 ns |
-| 8 | 952 ns | 54 ns |
-| 12 | 15.8 µs | 103 ns |
+| ``p`` | `evaluate`, one function | `evaluate_all`, the whole block | ratio |
+|--:|--:|--:|--:|
+| 3 | 26 ns | 21 ns | 1.3 |
+| 6 | 241 ns | 39 ns | 6.1 |
+| 8 | 963 ns | 58 ns | 16.7 |
+| 12 | 15.5 µs | 104 ns | 149 |
+
+Absolute timings are a property of the machine; the exponents are not. Doubling the degree
+from ``6`` to ``12`` costs the single value 64 times more and the block 2.6 times more, which
+is ``2^6`` against ``(12/6)^2``. The measurement is archived as
+`scripts/evaluate_cost_scaling.jl`, which fails if the two stop being distinguishable.
 
 At the cubics almost everything here uses the difference hardly matters; at ``p = 12`` it is a
 factor of 150. Either way, a loop that wants every nonzero function at a point should ask for

@@ -90,8 +90,9 @@ end
 ### Symbol sugar
 
 `:periodic`, `:dirichlet`, `:neumann`, `:natural`, `:free`. Lowercase only, and deliberately
-**not** case-insensitive: four capitalised spellings that used to mean something different are
-rejected with a message saying what to write instead.
+**not** case-insensitive: `:Natural`, `:nothing`, `:Dirichlet` and `:Periodic` are rejected
+with a message saying what to write instead, and any other symbol with the list of the five
+that are accepted.
 
 ```@example ubnd
 for s in (:Natural, :nothing, :Dirichlet, :quasiperiodic)

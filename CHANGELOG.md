@@ -22,16 +22,17 @@ the boundary conditions and tensor products landed. It is now a manual of fourte
 | **Tutorial** | one narrative from a bare `using` to a solved boundary-value problem |
 | **Theory** | the Cox-de Boor recursion, the derivative recursion, support, smoothness and the three dimension counts; recombination and what it costs; the tensor-product space and its flattening convention |
 | **Usage** | one page per object — meshes, bases, boundary conditions, assembly, tensor products, splines — with the exact constructors, the accessor tables, what is rejected, and the traps |
-| **Gallery** | eight solved problems with their measured errors and convergence rates |
+| **Gallery** | eight solved problems, each printing what it measured — a convergence rate where one is meaningful, otherwise the errors themselves |
 | **Library** | every export, grouped by topic, with explicit `@docs` blocks rather than `@autodocs` |
 | **References** | a bibliography, via `DocumenterCitations` |
 
 Everything computational in it is an `@example` block, so the numbers, the rates and the
 sixteen `CairoMakie` figures are produced by the build and a claim that stops being true stops
-the build. Three of the gallery problems are new rather than lifted from the suite — Poisson in
-one dimension with a `Dirichlet` basis and its variable-coefficient variant, the Dirichlet
-eigenvalues against `(kπ)²`, and Poisson on a box through the separable Laplacian — and each
-reports its own convergence order.
+the build. Three of the gallery problems are new rather than lifted from the suite: Poisson in
+one dimension with a `Dirichlet` basis and its variable-coefficient variant, which reports a
+measured order of `p+1`; the Dirichlet eigenvalues against `(kπ)²`, which reports the relative
+error per mode and per degree; and Poisson on a box through the separable Laplacian, which
+reports the error at three refinements.
 
 The library page is written out by hand instead of generated, for two reasons: `@autodocs`
 rendered the internal `_bspline` alongside the public API, and an explicit list is what makes

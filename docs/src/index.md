@@ -74,11 +74,17 @@ maximum(abs(evaluate(b, û, x) - sin(π * x)) for x in range(0, 1; length = 101)
 ## How the pieces fit
 
 ```
-Mesh  ──┐
-        ├──▶  AbstractBSplineBasis  ──▶  SplineQuadrature  ──▶  matrices, projections
-BoundaryCondition ─┘         │                    │
-                             │                    └──▶  MassOperator  ──▶  mass_solve!
-                             └──▶  Spline  ──▶  s(x), derivative(s)
+Mesh + BoundaryCondition
+        │
+        ▼
+AbstractBSplineBasis  ───▶  Spline        ───▶  s(x),  derivative(s)
+        │
+        ▼
+SplineQuadrature      ───▶  mass_matrix, stiffness_matrix, derivative_matrix,
+        │                   mixed_matrix, weighted_matrix, basis_integrals,
+        │                   l2_projection
+        ▼
+MassOperator          ───▶  mass_solve!,  op \ x
 ```
 
 The mesh is geometry alone and carries no boundary condition; the boundary condition decides

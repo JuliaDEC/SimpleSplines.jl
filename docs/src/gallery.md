@@ -11,7 +11,6 @@ manual is built, so nothing here is a claim about what the package should do.
 using SimpleSplines
 using CairoMakie
 using LinearAlgebra
-using SparseArrays
 CairoMakie.activate!(type = "png")     # hide
 nothing                                # hide
 ```
@@ -231,14 +230,14 @@ uh(0.0), uh(1.0), uh(0.5)
 ```
 
 ```@example gal
-fig = Figure(size = (780, 300))
+fig = Figure(size = (780, 340))
 xs = range(0, 1; length = 401)
 ax1 = Axis(fig[1, 1]; xlabel = "x", title = "-u'' = π² sin(πx),  p = 3, n = 16")
 lines!(ax1, xs, exact.(xs); label = "exact")
 lines!(ax1, xs, uh.(xs); linestyle = :dash, linewidth = 3, label = "Galerkin")
-axislegend(ax1; position = :rb)
 ax2 = Axis(fig[1, 2]; xlabel = "x", title = "error")
 lines!(ax2, xs, uh.(xs) .- exact.(xs))
+Legend(fig[2, 1:2], ax1; orientation = :horizontal, framevisible = false)
 fig
 ```
 
@@ -315,7 +314,8 @@ for k in 1:3
     v ./= maximum(abs, [evaluate(b6, v, x) for x in xs])
     lines!(ax1, xs, [evaluate(b6, v, x) for x in xs]; label = "k = $(k)")
 end
-axislegend(ax1; position = :rb)
+ylims!(ax1, -1.1, 1.55)
+axislegend(ax1; position = :rt, orientation = :horizontal, framevisible = false)
 ax2 = Axis(fig[1, 2]; yscale = log10, xlabel = "k", ylabel = "relative error",
     title = "eigenvalue error, n = 32")
 for p in 2:4
@@ -449,13 +449,13 @@ maximum(abs(fdep(x) - mean_density) for x in range(0, 1; length = 401))
 ```
 
 ```@example gal
-fig = Figure(size = (780, 300))
+fig = Figure(size = (780, 340))
 xs = range(0, 1; length = 401)
 ax = Axis(fig[1, 1]; xlabel = "x", ylabel = "f(x)",
     title = "20 000 uniform particles deposited onto a cubic periodic basis, n = 32")
 lines!(ax, xs, fdep.(xs); label = "reconstructed density")
 hlines!(ax, [1.0]; color = :black, linestyle = :dash, label = "exact")
-axislegend(ax; position = :rb)
+Legend(fig[2, 1], ax; orientation = :horizontal, framevisible = false)
 fig
 ```
 
