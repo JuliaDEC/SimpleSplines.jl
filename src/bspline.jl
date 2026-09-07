@@ -734,12 +734,13 @@ end
     evaluate_all(b::AbstractBSplineBasis, x, d = 0)
     evaluate_all!(values, b::AbstractBSplineBasis, x, d = 0)
 
-The `d`-th derivatives at `x` of the `p+1` basis functions that do not vanish there,
+The `d`-th derivatives at `x` of the basis functions that do not vanish there,
 returned as `(j₀, values)` — or, for the in-place form, written into `values` with `j₀`
 returned.
 
-`values` must have `local_width(b)` entries — `p+1` for a clamped or periodic basis, more for a
-recombined one; `values[t]` is the derivative of basis function `basis_index(b, j₀ + t - 1)`.
+`values` must have `local_width(b)` entries — `p+1` for a clamped or periodic basis, and
+possibly more for a recombined one; `values[t]` is the derivative of basis function
+`basis_index(b, j₀ + t - 1)`.
 
 ```jldoctest
 julia> b = BSplineBasis(UniformMesh(8, 0 .. 1), 3);
