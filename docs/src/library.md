@@ -9,8 +9,8 @@ together, the Theory pages for the mathematics, and the Usage pages for the deta
 object.
 
 Seven accessors are **shared with the rest of the ecosystem** rather than defined here.
-[`basis`](@ref), [`degree`](@ref), [`nodes`](@ref), `nnodes` and [`order`](@ref) belong to
-`GeometricBase`, `grid` to `ContinuumArrays`, and [`nbasis`](@ref) to
+[`basis`](@ref), [`degree`](@ref), [`nodes`](@ref), [`nnodes`](@ref) and [`order`](@ref)
+belong to `GeometricBase`, [`grid`](@ref) to `ContinuumArrays`, and [`nbasis`](@ref) to
 [CompactBasisFunctions.jl](https://github.com/JuliaGNI/CompactBasisFunctions.jl), so that one
 generic function per accessor is extended across the packages instead of one being defined in
 each. Four further names are **re-exported unchanged** so that `using SimpleSplines` is enough
