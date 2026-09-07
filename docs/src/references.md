@@ -15,8 +15,10 @@ Cottrell, Hughes and Bazilevs [Cottrell:2009:IsogeometricAnalysis](@cite) treat 
 finite-element and isogeometric settings it is written for. Basis recombination as a device for
 imposing boundary conditions is discussed by Boyd [Boyd:2001:ChebyshevFourier](@cite).
 
-Only bibliographic data that could be checked appears below: the books carry no DOI here rather
-than an unverified one.
+Every identifier below was checked against Crossref. Two entries carry no DOI because none is
+registered for the edition cited: de Boor's revised edition of 2001 — the only Crossref record
+for that title is the 1978 first edition's eBook, whose landing page no longer resolves — and
+Boyd's Dover second edition, for which only the 1989 Springer first edition is registered.
 
 ```@bibliography
 ```
