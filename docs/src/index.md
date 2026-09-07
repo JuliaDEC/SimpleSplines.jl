@@ -4,13 +4,27 @@ CurrentModule = SimpleSplines
 
 # SimpleSplines.jl
 
-Periodic B-spline finite elements on an interval, built from the Cox-de Boor recursion, with
-the quadrature and assembly a Galerkin discretisation needs.
+B-spline finite elements on an interval, built from the Cox-de Boor recursion, with the
+quadrature and assembly a Galerkin discretisation needs.
 
-The package is deliberately small. It provides one basis — the periodic B-spline basis of
-arbitrary degree on a uniform or non-uniform mesh — and one assembly table built on it, from
-which the mass, stiffness, derivative and variable-coefficient matrices all follow as single
-weighted contractions.
+The package is deliberately small: one family of bases, one assembly table, and the mass,
+stiffness, derivative and variable-coefficient matrices as single weighted contractions of
+that table. What it is *not* is a curve- and surface-modelling library — there are no NURBS,
+no knot insertion, no degree elevation and no least-squares fitting of data. What it is for
+is discretising a differential equation and then solving with the result.
+
+## What it provides
+
+| | |
+|:--|:--|
+| **Bases** | clamped ([`BSplineBasis`](@ref)), periodic ([`PeriodicBSplineBasis`](@ref)), and recombined ([`RecombinedBSplineBasis`](@ref)) — of any degree ``p \ge 0`` |
+| **Meshes** | [`UniformMesh`](@ref), [`GradedMesh`](@ref), [`RandomMesh`](@ref), [`GeneralMesh`](@ref) |
+| **Boundary conditions** | [`Free`](@ref), [`Periodic`](@ref), [`Dirichlet`](@ref), [`Neumann`](@ref), [`Natural`](@ref), [`Robin`](@ref), and the general [`Constraint`](@ref) — per end |
+| **Assembly** | [`SplineQuadrature`](@ref) and, from it, [`mass_matrix`](@ref), [`stiffness_matrix`](@ref), [`derivative_matrix`](@ref), [`mixed_matrix`](@ref), [`weighted_matrix`](@ref), [`basis_integrals`](@ref) |
+| **Mass solves** | [`CirculantMass`](@ref) (FFT), [`BandedMass`](@ref) (banded Cholesky), [`FactorizedMass`](@ref) (sparse Cholesky), [`KroneckerMass`](@ref) (factored, ``D``-dimensional) |
+| **Tensor products** | [`TensorProductBasis`](@ref) and [`TensorProductQuadrature`](@ref) in any number of dimensions, with degree, mesh, domain and boundary condition **per axis** |
+| **Functions** | [`Spline`](@ref), [`SplineDerivative`](@ref), [`l2_projection`](@ref) |
+| **Particle path** | [`findcell`](@ref) and [`evaluate_all!`](@ref), allocation-free, for depositing onto the basis |
 
 ## Installation
 
@@ -19,113 +33,78 @@ using Pkg
 Pkg.add(url = "https://github.com/JuliaDEC/SimpleSplines.jl")
 ```
 
-## Basic usage
+## In thirty seconds
 
-A basis is a [`Mesh`](@ref) and a degree:
+A basis is a [`Mesh`](@ref), a degree, and a [`BoundaryCondition`](@ref):
 
 ```@example intro
 using SimpleSplines
 
-b = PeriodicBSplineBasis(UniformMesh(16, 2π), 3)
-nbasis(b), degree(b), order(b)
-```
-
-Note that the number of degrees of freedom is the number of *cells*, `N = n`, not `n + p`:
-on a torus the `p` extra functions of the bounded case are the ones the clamping introduces
-at the two ends, and the periodic wrap identifies them in pairs.
-
-Basis functions are indexed as `b[x, j]`, and derivatives of arbitrary order come from
-[`evaluate`](@ref):
-
-```@example intro
-b[0.7, 3], evaluate(b, 3, 0.7, 1), evaluate(b, 3, 0.7, 2)
+b = BSplineBasis(UniformMesh(16, 0 .. 1), 3, Dirichlet())
+nbasis(b), degree(b), order(b), polynomial_reproduction(b)
 ```
 
 Assembly goes through a [`SplineQuadrature`](@ref), which tabulates the basis and its
-derivatives at the global Gauß-Legendre points:
+derivatives at the global Gauß-Legendre points and hands back every matrix built on them:
 
 ```@example intro
 q = SplineQuadrature(b)
 M = mass_matrix(q)
-S = derivative_matrix(q)
-maximum(abs, S + S')      # antisymmetric on a periodic mesh
+K = stiffness_matrix(q)
+size(M), size(K)
 ```
 
-Projecting a function onto the spline space:
+Fitting a function to the space is an ``L^2`` projection, and the result is callable:
 
 ```@example intro
-û = l2_projection(q, sin)
-abs(evaluate(b, û, 1.0) - sin(1.0))
+u = Spline(b, l2_projection(q, x -> sin(π * x)))
+u(0.5), u(0.5, 1), u(0.0)        # value, first derivative, and the imposed u(0) = 0
 ```
 
-## Meshes
-
-Three families are provided, and which one to use is a question about what is being tested
-rather than about the discretisation:
-
-| mesh | refining `n` gives | use it for |
-|:--|:--|:--|
-| [`UniformMesh`](@ref) | a uniform refinement | ordinary computation; but its assemblies are *circulant*, so it confirms some identities for the wrong reason |
-| [`GradedMesh`](@ref) | a genuine mesh family | convergence rates |
-| [`RandomMesh`](@ref) | an unrelated mesh | properties that must hold on *any* mesh |
-
-## The mass matrix
-
-Solves against the mass matrix go through a [`MassOperator`](@ref), and which representation
-is built is decided by the **basis** — a uniform mesh is necessary for circulance but not
-sufficient, since a clamped basis on one has ``p`` boundary functions at each end that are
-not translates of anything:
-
-  - for a [`PeriodicBSplineBasis`](@ref) on a [`UniformMesh`](@ref) the basis functions are
-    translates of a single cardinal spline, so ``\mathbb{M}`` is **circulant** and
-    diagonalised by the discrete Fourier transform. A solve is two planned transforms and a
-    pointwise division, and allocates nothing beyond its result. This is a
-    [`CirculantMass`](@ref).
-  - for a bounded basis — [`BSplineBasis`](@ref) or [`RecombinedBSplineBasis`](@ref) — there
-    is no seam, so the overlaps are contiguous and ``\mathbb{M}`` is **banded** outright. A
-    banded Cholesky solves it in ``O(Np)`` and allocates nothing at all. This is a
-    [`BandedMass`](@ref).
-  - for a periodic basis on a [`GradedMesh`](@ref) or [`RandomMesh`](@ref) it is banded
-    modulo ``N`` but *not* circulant — the basis functions are no longer translates of one
-    another — so there is nothing for a transform to diagonalise, and the wrap-around entries
-    put it outside the banded representation too. A sparse Cholesky factorisation is what is
-    left, a [`FactorizedMass`](@ref).
+Solving ``-u'' = f`` with ``u(0) = u(1) = 0`` is then two lines, because the recombined basis
+has already taken care of the boundary condition:
 
 ```@example intro
-mass_operator(q)
+f(x) = π^2 * sin(π * x)
+rhs = basis_values(q, 0) * (quadrature_weights(q) .* f.(quadrature_nodes(q)))
+û = Matrix(K) \ rhs
+maximum(abs(evaluate(b, û, x) - sin(π * x)) for x in range(0, 1; length = 101))
 ```
 
-The construction *verifies* circulance rather than assuming it: a matrix that is banded but
-not circulant would still produce plausible numbers through the transform, and the failure
-would surface much later as a wrong conservation law.
+## How the pieces fit
 
-## Storage
-
-The basis tabulation is **sparse**. A basis function is supported on `p+1` cells, so only
-`(p+1)·nq` of the `n·nq` entries in its row are structurally nonzero, and storing ``\Phi``
-densely would make every contraction ``\Phi \, \mathrm{diag}(fw) \, \Phi^T`` cost
-``O(N^2 n n_q)`` instead of ``O(N p^2 n_q)``.
-
-The constant assemblies — [`mass_matrix`](@ref), [`stiffness_matrix`](@ref),
-[`derivative_matrix`](@ref) and any [`mixed_matrix`](@ref) — are memoised on first use, since
-they do not depend on the field but are asked for inside every Newton iteration of a
-downstream time integrator.
-
-## Quadrature
-
-The default rule, [`quadrature_order`](@ref), integrates degree ``3p-1`` exactly — what the
-consistency of a Galerkin discretisation of a quadratic nonlinearity needs. Two lower
-thresholds are worth knowing:
-
-  - the mass matrix needs degree ``2p``, i.e. `nq ≥ p+1`;
-  - the antisymmetry of [`derivative_matrix`](@ref) needs degree ``2p-1``, i.e. `nq ≥ p`,
-    and fails outright below it on a non-uniform mesh.
-
-## Library
-
-```@index
+```
+Mesh  ──┐
+        ├──▶  AbstractBSplineBasis  ──▶  SplineQuadrature  ──▶  matrices, projections
+BoundaryCondition ─┘         │                    │
+                             │                    └──▶  MassOperator  ──▶  mass_solve!
+                             └──▶  Spline  ──▶  s(x), derivative(s)
 ```
 
-```@autodocs
-Modules = [SimpleSplines]
-```
+The mesh is geometry alone and carries no boundary condition; the boundary condition decides
+which of the three bases the one constructor [`BSplineBasis`](@ref)`(mesh, p, bc)` returns;
+the basis decides which representation the mass matrix takes. A tensor product is the same
+picture with a tuple in each box.
+
+## Where to go next
+
+  - **[Tutorial](@ref)** — one worked example from a bare `using` to a solved problem.
+  - **Theory** — [B-Splines](@ref) for the recursion, the derivative formula and the dimension
+    counts; [Boundary Conditions](@ref theory-boundary) for recombination; [Tensor
+    Products](@ref theory-tensorproduct) for the Kronecker structure.
+  - **Usage** — [Meshes](@ref usage-meshes), [Bases](@ref usage-bases), [Boundary
+    Conditions](@ref usage-boundary), [Assembly](@ref usage-assembly), [Tensor Products](@ref
+    usage-tensorproduct) and [Splines](@ref usage-splines) give the constructors, the
+    accessors and the traps.
+  - **[Gallery](@ref)** — seven solved problems with their measured errors.
+  - **[Library](@ref)** — every exported name.
+
+## Related packages
+
+[CompactBasisFunctions.jl](https://github.com/JuliaGNI/CompactBasisFunctions.jl) provides the
+`Basis` hierarchy these bases join, along with the Lagrange, Chebyshev, Legendre and Bernstein
+families; [QuadratureRules.jl](https://github.com/JuliaGNI/QuadratureRules.jl) provides the
+Gauß-Legendre nodes and weights; and `GeometricBase` owns the shared accessors
+[`basis`](@ref), [`degree`](@ref), [`nodes`](@ref), `nnodes` and [`order`](@ref), so that one
+generic function per accessor is extended across the ecosystem rather than one defined per
+package.

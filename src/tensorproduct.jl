@@ -129,6 +129,12 @@ it is not materialised, since at three dimensions it is the whole coefficient ar
 """
 nodes(B::TensorProductBasis) = map(nodes, B.bases)
 
+"""
+    nnodes(B::TensorProductBasis)
+
+The number of points of the tensor-product node grid, ``\\prod_d N_d`` — a scalar, unlike
+[`nodes`](@ref)`(B)`, which returns the per-axis vectors whose product that grid is.
+"""
 nnodes(B::TensorProductBasis) = length(B)
 
 """
@@ -532,9 +538,36 @@ struct TensorProductQuadrature{T, D, BT <: TensorProductBasis{T, D}, QS <: Tuple
     end
 end
 
+"""
+    basis(q::TensorProductQuadrature)
+
+The [`TensorProductBasis`](@ref) the quadrature was built for.
+"""
 basis(q::TensorProductQuadrature) = q.basis
+
+"""
+    quadratures(q::TensorProductQuadrature)
+
+The tuple of one-dimensional [`SplineQuadrature`](@ref)s, one per axis, in axis order.
+
+This is how the per-axis tables are reached: `basis_values(quadratures(q)[k], d)` is the
+tabulation of axis `k`, and there is no `D`-dimensional table to ask for.
+"""
 quadratures(q::TensorProductQuadrature) = q.quadratures
+
+"""
+    mass_operator(q::TensorProductQuadrature)
+
+The [`KroneckerMass`](@ref) built from the per-axis mass operators, never assembled.
+"""
 mass_operator(q::TensorProductQuadrature) = q.mass
+
+"""
+    mass_matrix(q::TensorProductQuadrature)
+
+The assembled Kronecker product `kron(M_D, …, M_1)`, formed on demand — see
+[`mass_matrix`](@ref)`(op::KroneckerMass)` for why it is not stored.
+"""
 mass_matrix(q::TensorProductQuadrature) = mass_matrix(q.mass)
 nbasis(q::TensorProductQuadrature) = nbasis(q.basis)
 degree(q::TensorProductQuadrature) = degree(q.basis)

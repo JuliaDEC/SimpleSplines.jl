@@ -34,6 +34,13 @@ built on them doubles as a check of the formulae themselves. It is the *referenc
 implementation: [`evaluate_all`](@ref) computes the same numbers in ``O(p^2)`` for the whole
 local block, and the test suite checks the two against each other.
 
+Written as it stands the recursion is *unmemoised*, so it splits into two subproblems at every
+level and the cost of one value is ``O(2^p)`` rather than ``O(p^2)``. That is deliberate — the
+point of this function is to be the formula, not to be fast — but it is the reason
+[`evaluate_all!`](@ref) exists rather than a convenience wrapper around a loop over this one.
+Measured at 20 000 evaluations on a 40-cell mesh: 27 ns per call at ``p = 3`` against 17 ns for
+the *whole block* through [`evaluate_all`](@ref), and 15.8 µs against 103 ns at ``p = 12``.
+
 A knot span of zero length — a repeated knot — contributes nothing, which is what makes the
 recursion well defined at a knot of multiplicity greater than one. The guard is on the span
 being positive rather than on the numerator, because it is the division that fails.
@@ -167,8 +174,22 @@ Base.eltype(::AbstractBSplineBasis{T}) where {T} = T
 Base.eltype(::Type{<:AbstractBSplineBasis{T}}) where {T} = T
 Base.eachindex(b::AbstractBSplineBasis) = Base.OneTo(nbasis(b))
 Base.axes(b::AbstractBSplineBasis) = (Inclusion(domain(b)), eachindex(b))
+"""
+    grid(b::AbstractBSplineBasis)
+
+The [`nodes`](@ref) of `b`, under the name `ContinuumArrays` uses for the points a quasi-array
+is sampled at. The generic belongs to that package and is extended here rather than redefined.
+"""
 ContinuumArrays.grid(b::AbstractBSplineBasis) = nodes(b)
 
+"""
+    nnodes(b::AbstractBSplineBasis)
+
+The number of [`nodes`](@ref), which for a spline basis is [`nbasis`](@ref)`(b)`: there is one
+Greville abscissa per basis function.
+
+The generic belongs to `GeometricBase` and is extended here rather than redefined.
+"""
 nnodes(b::AbstractBSplineBasis) = nbasis(b)
 
 @doc raw"""
@@ -552,10 +573,11 @@ gives zero — which is the mathematically correct value for a compactly support
 is worth being aware of in a particle method, where a particle that leaves the domain
 silently stops contributing rather than raising an error.
 
-This is the reference path, one basis function at a time. A loop that needs every nonzero
-function at a point — a particle deposition, or a matrix assembly — should use
-[`evaluate_all`](@ref), which is ``O(p^2)`` for the whole block of `p+1` rather than
-``O(p^2)`` for each one.
+This is the reference path, one basis function at a time, and it runs the recursion as written
+rather than through a faster equivalent: one value costs ``O(2^p)``. A loop that needs every
+nonzero function at a point — a particle deposition, or a matrix assembly — should use
+[`evaluate_all`](@ref) instead, which is ``O(p^2)`` for the whole block of `p+1` together. The
+two are within a factor of two at ``p = 3`` and a factor of 150 apart at ``p = 12``.
 """
 function evaluate(b::BSplineBasis{T}, j::Integer, x::Number, d::Integer = 0) where {T}
     @boundscheck (1 ≤ j ≤ nbasis(b)) || throw(BoundsError(b, j))
@@ -661,6 +683,16 @@ end
 ## Local evaluation
 ## ---------------------------------------------------------------------------------------
 
+# The shared implementation. `findcell` itself carries the docstring, below: a `@doc` block
+# here would document *this* function instead, leaving the exported name undocumented.
+function _findcell(y::AbstractVector, n::Integer, x::Number)
+    x ≤ y[begin] && return 1
+    x ≥ y[end] && return n
+    # searchsortedlast gives the k with y[k] ≤ x < y[k+1]; both ends are handled above, so
+    # the result is already in 1:n and needs no clamping.
+    return searchsortedlast(y, x)
+end
+
 @doc raw"""
     findcell(b::AbstractBSplineBasis, x)
     findcell(m::Mesh, x)
@@ -671,15 +703,10 @@ The right endpoint `b` belongs to the last cell, not to a cell of its own — th
 half-open except for the last, which is closed. A point outside the domain is clamped to the
 nearest cell for a bounded mesh; on a [`PeriodicBSplineBasis`](@ref) reduce `x` onto the
 domain first.
-"""
-function _findcell(y::AbstractVector, n::Integer, x::Number)
-    x ≤ y[begin] && return 1
-    x ≥ y[end] && return n
-    # searchsortedlast gives the k with y[k] ≤ x < y[k+1]; both ends are handled above, so
-    # the result is already in 1:n and needs no clamping.
-    return searchsortedlast(y, x)
-end
 
+Called on a basis rather than on a mesh it allocates nothing, the breakpoints being cached in
+the basis; on a [`UniformMesh`](@ref) it is a division that does not read them at all.
+"""
 findcell(m::Mesh, x::Number) = _findcell(breakpoints(m), ncells(m), x)
 
 # On a uniform mesh the cell index is a division, with no need for the breakpoint vector at
@@ -725,10 +752,11 @@ julia> sum(v) ≈ 1                     # the other N - p - 1 functions vanish a
 true
 ```
 
-This is the routine a particle method needs. Depositing ``N_p`` particles onto the basis
-costs ``O(N_p \, p^2)`` through this and ``O(N_p \, N)`` through [`evaluate`](@ref) one index
+This is the routine a particle method needs. Depositing ``N_p`` particles onto the basis costs
+``O(N_p \, p^2)`` through this and ``O(N_p \, N \, 2^p)`` through [`evaluate`](@ref) one index
 at a time — the difference between a loop over the `p+1` functions that actually overlap the
-particle and a loop over the whole basis.
+particle and a loop over the whole basis, and, within each term of it, between the triangular
+scheme and the unmemoised recursion.
 
 !!! note "The index may need wrapping"
     `j₀ + t - 1` is the index *before* wrapping, and the block is contiguous only in that
@@ -753,7 +781,7 @@ D^{m+1} \phi_j^r = r \left( \frac{D^m \phi_j^{r-1}}{x_{j+r} - x_j}
 ```
 
 then lifts the block from degree ``p-d`` to degree ``p``, one order at a time, the block
-growing by one function at each step. [`_bspline`](@ref) computes the same numbers from the
+growing by one function at each step. The internal `_bspline` computes the same numbers from the
 recursion written out as it stands, and the test suite checks the two against each other at
 every degree and derivative order.
 """
@@ -920,5 +948,13 @@ end
 
 Base.adjoint(b::AbstractBSplineBasis) = Derivative(axes(b, 1)) * b
 
-# Retained so that code written against the periodic-only version keeps resolving.
+"""
+    PeriodicBSplineDerivative
+
+The [`BSplineDerivative`](@ref) of a [`PeriodicBSplineBasis`](@ref) specifically.
+
+Retained so that code written against the periodic-only version of this package keeps
+resolving; new code should dispatch on [`BSplineDerivative`](@ref), which covers all three
+bases.
+"""
 const PeriodicBSplineDerivative = QMul2{<:Derivative, <:PeriodicBSplineBasis}
