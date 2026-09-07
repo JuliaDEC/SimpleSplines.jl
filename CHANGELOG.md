@@ -66,8 +66,8 @@ instructions for developing it, and had to follow the link to the manual to find
 line or a single line of code. It now carries the installation command, the `-u'' = f` solve
 end to end with its measured error, the L² projection, and one sentence saying what the package
 is *not* — no NURBS, no knot insertion, no fitting — since that is the question a visitor
-arriving from a search for "Julia splines" is actually asking. The pointer to the manual also
-names the Usage pages, which did not exist when it was written.
+arriving from a search for "Julia splines" is actually asking. The pointer to the manual now
+enumerates the Usage pages and the gallery's eight problems, which it had left out.
 
 ### General boundary conditions and tensor products
 
