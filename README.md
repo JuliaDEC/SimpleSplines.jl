@@ -7,11 +7,20 @@
 [![Coverage](https://codecov.io/gh/JuliaDEC/SimpleSplines.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/JuliaDEC/SimpleSplines.jl)
 [![PkgEval](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/S/SimpleSplines.svg)](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/S/SimpleSplines.html)
 
-Periodic B-spline finite elements on an interval, built from the Cox-de Boor recursion,
-with the quadrature and assembly a Galerkin discretisation needs. The package provides the
-periodic B-spline basis of arbitrary degree on uniform, graded and random meshes, together
-with an assembly table from which the mass, stiffness, derivative and variable-coefficient
-matrices follow as single weighted contractions.
+B-spline finite elements on an interval, built from the Cox-de Boor recursion, with the
+quadrature and assembly a Galerkin discretisation needs.
+
+The package provides the clamped, periodic and recombined B-spline bases of arbitrary degree
+on uniform, graded, random or arbitrary meshes; homogeneous Dirichlet, Neumann, Robin, natural
+and general local boundary conditions per end; tensor products in any number of dimensions,
+with degree, mesh, domain and boundary condition per axis; and an assembly table from which the
+mass, stiffness, derivative and variable-coefficient matrices follow as single weighted
+contractions. Mass solves go through a representation chosen by the basis — an FFT for a
+periodic uniform basis, a banded Cholesky for a bounded one, and a factored Kronecker product
+in several dimensions.
+
+The [manual](https://JuliaDEC.github.io/SimpleSplines.jl/dev/) has a tutorial, the spline
+theory the package rests on, a gallery of solved problems and the full API.
 
 ## Development
 

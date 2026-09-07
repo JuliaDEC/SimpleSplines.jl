@@ -11,6 +11,55 @@ The first release with any implementation in it. Before this the package was a
 `PkgTemplates` skeleton: a registered UUID, CI, docs scaffolding and a declared dependency
 set, with `src/SimpleSplines.jl` a bare `module … end`.
 
+### The manual
+
+The documentation was one page ending in an `@autodocs` dump, and its opening two paragraphs
+still described the package as periodic-only with "one basis" — which had not been true since
+the boundary conditions and tensor products landed. It is now a manual of fourteen pages:
+
+| | |
+|:--|:--|
+| **Tutorial** | one narrative from a bare `using` to a solved boundary-value problem |
+| **Theory** | the Cox-de Boor recursion, the derivative recursion, support, smoothness and the three dimension counts; recombination and what it costs; the tensor-product space and its flattening convention |
+| **Usage** | one page per object — meshes, bases, boundary conditions, assembly, tensor products, splines — with the exact constructors, the accessor tables, what is rejected, and the traps |
+| **Gallery** | eight solved problems, each printing what it measured — a convergence rate where one is meaningful, otherwise the errors themselves |
+| **Library** | every export, grouped by topic, with explicit `@docs` blocks rather than `@autodocs` |
+| **References** | a bibliography, via `DocumenterCitations` |
+
+Everything computational in it is an `@example` block, so the numbers, the rates and the
+sixteen `CairoMakie` figures are produced by the build and a claim that stops being true stops
+the build. Three of the gallery problems are new rather than lifted from the suite: Poisson in
+one dimension with a `Dirichlet` basis and its variable-coefficient variant, which reports a
+measured order of `p+1`; the Dirichlet eigenvalues against `(kπ)²`, which reports the relative
+error per mode and per degree; and Poisson on a box through the separable Laplacian, which
+reports the error at three refinements.
+
+The library page is written out by hand instead of generated, for two reasons: `@autodocs`
+rendered the internal `_bspline` alongside the public API, and an explicit list is what makes
+a missing docstring visible. `checkdocs = :exports` is on.
+
+**One documentation bug fixed.** The `@doc raw` block whose signatures read
+`findcell(b, x)` / `findcell(m, x)` sat immediately above the internal `_findcell` and so
+documented *that*: `?findcell` showed nothing, `@docs findcell` would have failed the build,
+and `@autodocs` rendered the text under `SimpleSplines._findcell`. It is now attached to
+`findcell` itself. The same class of mistake as a comment between a docstring and its
+definition, and equally silent — nothing but a docs build notices.
+
+**One complexity claim corrected.** Writing the cost table for the manual turned up a wrong
+figure in the source: `evaluate`'s and `evaluate_all!`'s docstrings gave the single-function
+path as `O(p²)`, but `_bspline` runs the recursion unmemoised — it splits into two subproblems
+at every level — so one value costs `O(2^p)`. Measured over 20 000 evaluations on a 40-cell
+mesh, `evaluate` takes 26 ns at `p = 3` and 15.5 µs at `p = 12`, against 21 ns and 104 ns for
+the *whole block* through `evaluate_all`. Nothing about the implementation changed; the
+choice to run the formula as written is deliberate, and the reason `evaluate_all!` exists.
+What was wrong was the number, in the one place a reader would take it from.
+
+Docstrings were added for the exports that had none: `quadratures`,
+`PeriodicBSplineDerivative`, `nnodes`, `grid`, `basis` on a `SplineQuadrature`, and `basis`,
+`mass_operator`, `mass_matrix` and `nnodes` on the tensor-product types. `Basis`, `..`,
+`leftendpoint` and `rightendpoint` are re-exported unchanged and are documented by the packages
+that own them, which the library page says.
+
 ### General boundary conditions and tensor products
 
 The package was periodic-only: one basis, on `[0,L)`, on a torus. It now covers bounded
@@ -491,9 +540,9 @@ Found in review of the branch, not by the suite, and each now has a regression t
 reaches, because only that one contributes to `a_{m+1} = c_m D^m φ_{m+1}(a)`. That anchor is
 nonzero whenever the leading coefficient `c_m` is — but *how* nonzero is the caller's, not the
 construction's. `Robin(1.0, 1e-20)` puts a small coefficient on the highest derivative, the
-anchor is then numerically zero, and the recombination coefficients `-a_t/a_{m+1}` overflow:
+anchor is then numerically zero, and the recombination coefficients `-a_t/a_{m+1}` become huge:
 the mass matrix comes out finite with a condition number already `Inf`, `cholesky(…;
-check = false)` reports `issuccess` on a matrix containing `Inf`, and the projection that
+check = false)` reports `issuccess` on it anyway, and the projection that
 follows looks plausible.
 
 A finiteness guard would catch only the most extreme case and is a symptom patch — the

@@ -237,6 +237,11 @@ for a bounded basis — clamped or recombined — whose mass matrix has no seam 
 """
 mass_operator(q::SplineQuadrature) = q.mass
 
+"""
+    basis(q::SplineQuadrature)
+
+The [`AbstractBSplineBasis`](@ref) the quadrature was built for.
+"""
 basis(q::SplineQuadrature) = q.basis
 nbasis(q::SplineQuadrature) = nbasis(q.basis)
 degree(q::SplineQuadrature) = degree(q.basis)
