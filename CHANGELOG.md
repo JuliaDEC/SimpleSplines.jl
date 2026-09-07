@@ -60,6 +60,15 @@ Docstrings were added for the exports that had none: `quadratures`,
 `leftendpoint` and `rightendpoint` are re-exported unchanged and are documented by the packages
 that own them, which the library page says.
 
+**The README now says how to install the package and what using it looks like.** It had
+neither: a reader landing on the repository got the feature summary and the git-hook
+instructions for developing it, and had to follow the link to the manual to find the `Pkg.add`
+line or a single line of code. It now carries the installation command, the `-u'' = f` solve
+end to end with its measured error, the L² projection, and one sentence saying what the package
+is *not* — no NURBS, no knot insertion, no fitting — since that is the question a visitor
+arriving from a search for "Julia splines" is actually asking. The pointer to the manual now
+enumerates the Usage pages and the gallery's eight problems, which it had left out.
+
 ### General boundary conditions and tensor products
 
 The package was periodic-only: one basis, on `[0,L)`, on a torus. It now covers bounded

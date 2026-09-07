@@ -19,8 +19,53 @@ contractions. Mass solves go through a representation chosen by the basis — an
 periodic uniform basis, a banded Cholesky for a bounded one, and a factored Kronecker product
 in several dimensions.
 
+It is not a curve- and surface-modelling library: there are no NURBS, no knot insertion, no
+degree elevation and no least-squares fitting of data. It is for discretising a differential
+equation and then solving with the result.
+
+## Installation
+
+No version is registered yet, so install from the repository:
+
+```julia
+using Pkg
+Pkg.add(url = "https://github.com/JuliaDEC/SimpleSplines.jl")
+```
+
+## Example
+
+Solving `-u'' = f` with `u(0) = u(1) = 0`, on a cubic basis over 16 uniform cells:
+
+```julia
+using SimpleSplines
+
+# the boundary condition is built into the basis, not applied to the matrix afterwards
+b = BSplineBasis(UniformMesh(16, 0 .. 1), 3, Dirichlet())
+
+# assembly tabulates the basis and its derivatives at the global Gauß-Legendre points,
+# and every matrix is a weighted contraction of that one table
+q = SplineQuadrature(b)
+M = mass_matrix(q)
+K = stiffness_matrix(q)
+
+f(x) = π^2 * sin(π * x)
+rhs = basis_values(q, 0) * (quadrature_weights(q) .* f.(quadrature_nodes(q)))
+û = Matrix(K) \ rhs
+
+maximum(abs(evaluate(b, û, x) - sin(π * x)) for x in range(0, 1; length = 101))
+```
+
+which is `2.08e-6`. Fitting a function to the space instead is an L² projection, and the
+result is callable:
+
+```julia
+u = Spline(b, l2_projection(q, x -> sin(π * x)))
+u(0.5), u(0.5, 1), u(0.0)        # value, first derivative, and the imposed u(0) = 0
+```
+
 The [manual](https://JuliaDEC.github.io/SimpleSplines.jl/dev/) has a tutorial, the spline
-theory the package rests on, a gallery of solved problems and the full API.
+theory the package rests on, a usage page per object with the constructors and the traps, a
+gallery of eight solved problems with their measured errors, and the full API.
 
 ## Development
 
