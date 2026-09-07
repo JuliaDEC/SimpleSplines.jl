@@ -738,8 +738,8 @@ The `d`-th derivatives at `x` of the `p+1` basis functions that do not vanish th
 returned as `(j₀, values)` — or, for the in-place form, written into `values` with `j₀`
 returned.
 
-`values` must have `p+1` entries; `values[t]` is the derivative of basis function
-`basis_index(b, j₀ + t - 1)`.
+`values` must have `local_width(b)` entries — `p+1` for a clamped or periodic basis, more for a
+recombined one; `values[t]` is the derivative of basis function `basis_index(b, j₀ + t - 1)`.
 
 ```jldoctest
 julia> b = BSplineBasis(UniformMesh(8, 0 .. 1), 3);

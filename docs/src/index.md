@@ -19,7 +19,7 @@ is discretising a differential equation and then solving with the result.
 |:--|:--|
 | **Bases** | clamped ([`BSplineBasis`](@ref)), periodic ([`PeriodicBSplineBasis`](@ref)), and recombined ([`RecombinedBSplineBasis`](@ref)) — of any degree ``p \ge 0`` |
 | **Meshes** | [`UniformMesh`](@ref), [`GradedMesh`](@ref), [`RandomMesh`](@ref), [`GeneralMesh`](@ref) |
-| **Boundary conditions** | [`Free`](@ref), [`Periodic`](@ref), [`Dirichlet`](@ref), [`Neumann`](@ref), [`Natural`](@ref), [`Robin`](@ref), and the general [`Constraint`](@ref) — per end |
+| **Boundary conditions** | [`Free`](@ref), [`Dirichlet`](@ref), [`Neumann`](@ref), [`Natural`](@ref), [`Robin`](@ref), and the general [`Constraint`](@ref) — per end, plus [`Periodic`](@ref) for the whole basis |
 | **Assembly** | [`SplineQuadrature`](@ref) and, from it, [`mass_matrix`](@ref), [`stiffness_matrix`](@ref), [`derivative_matrix`](@ref), [`mixed_matrix`](@ref), [`weighted_matrix`](@ref), [`basis_integrals`](@ref) |
 | **Mass solves** | [`CirculantMass`](@ref) (FFT), [`BandedMass`](@ref) (banded Cholesky), [`FactorizedMass`](@ref) (sparse Cholesky), [`KroneckerMass`](@ref) (factored, ``D``-dimensional) |
 | **Tensor products** | [`TensorProductBasis`](@ref) and [`TensorProductQuadrature`](@ref) in any number of dimensions, with degree, mesh, domain and boundary condition **per axis** |
@@ -102,7 +102,7 @@ picture with a tuple in each box.
     Conditions](@ref usage-boundary), [Assembly](@ref usage-assembly), [Tensor Products](@ref
     usage-tensorproduct) and [Splines](@ref usage-splines) give the constructors, the
     accessors and the traps.
-  - **[Gallery](@ref)** — seven solved problems with their measured errors.
+  - **[Gallery](@ref)** — eight solved problems with their measured errors.
   - **[Library](@ref)** — every exported name.
 
 ## Related packages

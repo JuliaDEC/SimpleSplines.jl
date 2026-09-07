@@ -1,13 +1,11 @@
 # How the cost of `evaluate` and of `evaluate_all` grows with the degree, and therefore which
 # complexity their docstrings should state.
 #
-# The docstrings used to give the single-function path as `O(p^2)`. That is wrong. `_bspline`
-# is the Cox-de Boor recursion written out as it stands, with no memoisation, so it splits
-# into two subproblems at every level and the cost of one value is `O(2^p)`. `evaluate_all!`
-# runs de Boor's triangular scheme instead, which is `O(p^2)` for all `p+1` nonzero functions
-# *together* -- so the block form is not merely `p+1` times cheaper, it has a different
-# exponent. At the cubics almost everything here uses the difference hardly shows, which is
-# why the wrong figure survived.
+# `_bspline` is the Cox-de Boor recursion written out as it stands, with no memoisation, so it
+# splits into two subproblems at every level and the cost of one value is `O(2^p)`.
+# `evaluate_all!` runs de Boor's triangular scheme instead, which is `O(p^2)` for all `p+1`
+# nonzero functions *together* -- so the block form is not merely `p+1` times cheaper, it has a
+# different exponent. At the cubics almost everything here uses, the difference hardly shows.
 #
 # This script is what the figures quoted in `evaluate`'s and `_bspline`'s docstrings, and in
 # the cost table of `docs/src/theory/bsplines.md`, are read off. Absolute timings are a

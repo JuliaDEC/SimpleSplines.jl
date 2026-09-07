@@ -8,7 +8,7 @@ The complete API of *SimpleSplines.jl*. See the [Tutorial](@ref) for how the pie
 together, the Theory pages for the mathematics, and the Usage pages for the details of each
 object.
 
-Five accessors are **shared with the rest of the ecosystem** rather than defined here.
+Eight names are **shared with the rest of the ecosystem** rather than defined here.
 [`basis`](@ref), [`degree`](@ref), [`nodes`](@ref), `nnodes` and [`order`](@ref) belong to
 `GeometricBase`, [`nbasis`](@ref) and `Basis` to
 [CompactBasisFunctions.jl](https://github.com/JuliaGNI/CompactBasisFunctions.jl), and `grid` to

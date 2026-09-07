@@ -145,7 +145,7 @@ for nq in 2:4
 end
 ```
 
-At `nq = 2` on a random mesh the defect is ``10^{-3}``, not ``10^{-15}``. On the uniform mesh it
+At `nq = 2` on a random mesh the defect is ``\approx 10^{-2}``, not ``10^{-15}``. On the uniform mesh it
 is machine precision at every `nq`, which is why the check has to be run somewhere else.
 
 ## 4. A non-separable function in two dimensions

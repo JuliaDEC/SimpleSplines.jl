@@ -332,10 +332,10 @@ whenever the leading coefficient ``c_m`` is — but *how* nonzero is the caller'
 the construction's.
 
 `Robin(1.0, 1e-20)` puts a vanishing coefficient on the highest derivative. The anchor is then
-numerically zero, the recombination coefficients ``-a_t / a_{m+1}`` overflow, and the failure
-is silent in an unpleasant way: the mass matrix comes out finite with a condition number
-already `Inf`, `cholesky(…; check = false)` reports success on a matrix containing `Inf`, and
-the projection that follows looks plausible. Prefer the named type where one applies —
+numerically zero and the recombination coefficients ``-a_t / a_{m+1}`` become huge, and the
+failure is silent in an unpleasant way: the mass matrix comes out finite with a condition number
+already `Inf`, `cholesky(…; check = false)` reports success on it anyway, and the projection
+that follows looks plausible. Prefer the named type where one applies —
 `Robin(1.0, 0.0)` is [`Dirichlet`](@ref) and `Robin(0.0, 1.0)` is [`Neumann`](@ref) — and keep
 the two coefficients of a genuine Robin condition within a few orders of magnitude of each
 other.

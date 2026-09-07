@@ -49,7 +49,7 @@ definition, and equally silent — nothing but a docs build notices.
 figure in the source: `evaluate`'s and `evaluate_all!`'s docstrings gave the single-function
 path as `O(p²)`, but `_bspline` runs the recursion unmemoised — it splits into two subproblems
 at every level — so one value costs `O(2^p)`. Measured over 20 000 evaluations on a 40-cell
-mesh, `evaluate` takes 27 ns at `p = 3` and 15.8 µs at `p = 12`, against 17 ns and 103 ns for
+mesh, `evaluate` takes 26 ns at `p = 3` and 15.5 µs at `p = 12`, against 21 ns and 104 ns for
 the *whole block* through `evaluate_all`. Nothing about the implementation changed; the
 choice to run the formula as written is deliberate, and the reason `evaluate_all!` exists.
 What was wrong was the number, in the one place a reader would take it from.
@@ -540,9 +540,9 @@ Found in review of the branch, not by the suite, and each now has a regression t
 reaches, because only that one contributes to `a_{m+1} = c_m D^m φ_{m+1}(a)`. That anchor is
 nonzero whenever the leading coefficient `c_m` is — but *how* nonzero is the caller's, not the
 construction's. `Robin(1.0, 1e-20)` puts a small coefficient on the highest derivative, the
-anchor is then numerically zero, and the recombination coefficients `-a_t/a_{m+1}` overflow:
+anchor is then numerically zero, and the recombination coefficients `-a_t/a_{m+1}` become huge:
 the mass matrix comes out finite with a condition number already `Inf`, `cholesky(…;
-check = false)` reports `issuccess` on a matrix containing `Inf`, and the projection that
+check = false)` reports `issuccess` on it anyway, and the projection that
 follows looks plausible.
 
 A finiteness guard would catch only the most extreme case and is a symptom patch — the

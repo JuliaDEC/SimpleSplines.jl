@@ -175,9 +175,9 @@ vlines!(ax, breakpoints(bdir); color = (:black, 0.25), linestyle = :dash)
 fig
 ```
 
-Every one of them vanishes at both ends. Note that they are no longer a partition of unity:
-recombination replaces two functions by their difference, so the constants have left the
-space. [`polynomial_reproduction`](@ref) reports that as a number.
+Every one of them vanishes at both ends. Note that they are no longer a partition of unity: for
+`Dirichlet` recombination just drops the one function at each end that fails to vanish there, so
+the constants have left the space. [`polynomial_reproduction`](@ref) reports that as a number.
 
 ```@example tutorial
 polynomial_reproduction.((bfree, bdir, bper))
