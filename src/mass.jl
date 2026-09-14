@@ -101,11 +101,16 @@ end
 # invertible, and a kernel one dimension larger than the constants passes it. The whole
 # argument for `:project` rests on that minor, so the pivots are read rather than assumed.
 #
-# `diag` of an LLᵀ factor is the diagonal of L, so the pivots are its squares, and the minor is
-# positive definite to working precision exactly when the smallest is above `n * eps` of the
+# `diag` of a CHOLMOD factor is the diagonal of L, so the pivots are its squares, and the minor
+# is positive definite to working precision exactly when the smallest is above `n * eps` of the
 # largest -- the same relative standard `_check_constant_kernel` and `_reciprocal_eigenvalues`
 # hold their own assertions to. A matrix whose kernel is `span{𝟙, v}` puts that ratio at 2e-16,
 # where a genuine assembly holds it above 0.18 -- `scripts/mass_tolerance_margins.jl`.
+#
+# A dense minor takes the same path, and there `diag` of a `Cholesky` is the diagonal of the
+# reconstructed matrix rather than of L, so the ratio says nothing about the pivots. It does not
+# have to: LAPACK refuses a matrix that is not positive definite, so `issuccess` is already the
+# whole answer for a dense factor.
 function _check_definite_minor(F)
     issuccess(F) || throw(_singular_beyond_the_constants())
     d = diag(F)
