@@ -232,7 +232,7 @@ that are not translates of anything.
 
 | basis | mesh | representation | a solve is |
 |:--|:--|:--|:--|
-| [`PeriodicBSplineBasis`](@ref) | [`UniformMesh`](@ref) | [`CirculantMass`](@ref) | two planned transforms and a pointwise division, ``O(N\log N)``, no allocation |
+| [`PeriodicBSplineBasis`](@ref) | [`UniformMesh`](@ref) | [`CirculantMass`](@ref) | two planned transforms and a pointwise multiplication, ``O(N\log N)``, no allocation |
 | [`PeriodicBSplineBasis`](@ref) | any other | [`FactorizedMass`](@ref) | a sparse Cholesky; the only representation whose solve allocates |
 | bounded — clamped or recombined | any | [`BandedMass`](@ref) | a banded Cholesky, ``O(Np)``, no allocation |
 
@@ -246,9 +246,11 @@ for (name, bb) in (("periodic, uniform", BSplineBasis(UniformMesh(16, 0 .. 2π),
 end
 ```
 
-The circulant construction *verifies* circulance rather than assuming it, to `atol = 1e-10` by
-default. A matrix that is banded but not circulant would still produce plausible numbers
-through the transform, and the failure would surface much later as a wrong conservation law.
+The circulant construction *verifies* circulance rather than assuming it, to `rtol =
+sqrt(eps(T))` by default — *relative* to the largest entry of the first column, so that the
+verdict survives a rescaling of the assembly and holds in every element type. A matrix that is
+banded but not circulant would still produce plausible numbers through the transform, and the
+failure would surface much later as a wrong conservation law.
 
 ```@example asm
 qg = SplineQuadrature(BSplineBasis(GradedMesh(16, 0 .. 2π), 3, Periodic()))
@@ -257,6 +259,56 @@ try
 catch err
     println(err.msg)
 end
+```
+
+### A singular assembly
+
+The mass matrix is positive definite, but the same three representations carry the other
+assemblies of a quadrature, and [`stiffness_matrix`](@ref) on a periodic basis is *singular*:
+``-\phi'' = \rho`` says nothing about the constants, and a periodic basis represents them.
+
+```@example asm
+bp = BSplineBasis(UniformMesh(64, 0 .. 2π), 3, Periodic())
+qp = SplineQuadrature(bp)
+Sp = stiffness_matrix(qp)
+N = nbasis(bp)
+maximum(abs, Sp * ones(N))
+```
+
+By default [`mass_operator`](@ref) refuses it, since a singular assembly is usually too coarse
+a quadrature rather than an intended one:
+
+```@example asm
+try
+    mass_operator(Sp, bp)
+catch err
+    println(err.msg)
+end
+```
+
+`kernel = :project` asserts that the kernel is the constants, and asks for the solution that
+has no constant component. Each representation deflates that subspace in the way its own
+structure allows — [`CirculantMass`](@ref) gives the constant mode a zero factor, which is the
+Moore–Penrose pseudoinverse, and [`FactorizedMass`](@ref) factorises the minor that drops the
+first degree of freedom and takes the mean out afterwards. Both verify the assertion, and
+neither changes the matrix:
+
+```@example asm
+op = mass_operator(Sp, bp; kernel = :project)
+rhs = sin.(2π .* (0:(N - 1)) ./ N)     # one whole period, so its mean is already zero
+φ = op \ rhs
+maximum(abs, Sp * φ - rhs), sum(φ)     # it solves the system, in the mean-free gauge
+```
+
+The textbook cure is the rank-one shift by the mean projector,
+``\mathbb{S} + \mathbb{1}\mathbb{1}^T/N``, which is invertible and gives the same answer. It
+is also structurally full, so it costs ``O(N^2)`` to store and to factorise where the
+assembly itself costs ``O(N)``:
+
+```@example asm
+shifted = mass_operator(Matrix(Sp) .+ inv(N), bp)
+maximum(abs, φ - shifted \ rhs),
+Base.summarysize(Sp), Base.summarysize(Matrix(Sp) .+ inv(N))
 ```
 
 ### Solving
