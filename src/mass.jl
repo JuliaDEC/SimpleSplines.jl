@@ -79,9 +79,7 @@ struct FactorizedMass{T, MT, FT, K} <: MassOperator{T}
         elseif kernel === :project
             _check_constant_kernel(M)
             F = cholesky(Symmetric(M[2:end, 2:end]); check = false)
-            issuccess(F) || throw(ArgumentError(
-                "the matrix is singular beyond the constants: the minor that drops the " *
-                "first degree of freedom is not positive definite either"))
+            _check_definite_minor(F)
             return new{T, MT, typeof(F), :project}(M, F)
         end
         throw(_not_a_kernel_mode(kernel))
@@ -92,15 +90,49 @@ function _not_a_kernel_mode(kernel)
     ArgumentError("kernel must be :reject or :project, not $(repr(kernel))")
 end
 
+function _singular_beyond_the_constants()
+    ArgumentError(
+        "the matrix is singular beyond the constants: the minor that drops the first degree " *
+        "of freedom is not positive definite either")
+end
+
+# CHOLMOD calls the factorisation of a positive *semi*definite matrix a success -- a zero pivot
+# is not a breakdown to it -- so `issuccess` alone does not say whether the minor is
+# invertible, and a kernel one dimension larger than the constants passes it. The whole
+# argument for `:project` rests on that minor, so the pivots are read rather than assumed.
+#
+# `diag` of an LLᵀ factor is the diagonal of L, so the pivots are its squares, and the minor is
+# positive definite to working precision exactly when the smallest is above `n * eps` of the
+# largest -- the same relative standard `_check_constant_kernel` and `_reciprocal_eigenvalues`
+# hold their own assertions to. A matrix whose kernel is `span{𝟙, v}` puts that ratio at 2e-16,
+# where a genuine assembly holds it above 0.19 over degrees 1 to 4 and 16 to 256 cells.
+function _check_definite_minor(F)
+    issuccess(F) || throw(_singular_beyond_the_constants())
+    d = diag(F)
+    lo, hi = extrema(abs, d)
+    lo > sqrt(length(d) * eps(eltype(d))) * hi || throw(_singular_beyond_the_constants())
+    return nothing
+end
+
 # `:project` deflates the constants specifically, so it is correct only where that is what the
 # kernel holds. Verify rather than assume: a matrix singular for some other reason would take
 # the same path, and both the positive-definite minor and the mean-free gauge would then be
 # answering a question nobody asked.
+#
+# The bound is `n * eps(T)` relative to ‖M‖∞, which is the row-sum scale `M𝟙` is measured on,
+# and it is the standard `_reciprocal_eigenvalues` holds the circulant path to. It has to be
+# *relative* and it has to have no floor: a bound that cannot fall below one is absolute for
+# every matrix smaller than that, and accepts any invertible matrix scaled down far enough.
+# `M𝟙` of a genuine singular assembly is pure rounding and grows with n like the bound does --
+# over degrees 1 to 8 and 64 to 4096 cells it reaches 0.16 of it, where an invertible mass
+# matrix sits 10¹³ above it in the same units.
 function _check_constant_kernel(M::AbstractMatrix{T}) where {T}
-    residual = norm(M * ones(T, size(M, 2)), Inf)
-    residual ≤ sqrt(eps(T)) * max(one(T), norm(M, Inf)) || throw(ArgumentError(
-        "kernel = :project deflates the constants, but M𝟙 has norm $(residual); the kernel " *
-        "of this matrix is not what the projection assumes"))
+    n = size(M, 2)
+    residual = norm(M * ones(T, n), Inf)
+    tol = n * eps(T) * norm(M, Inf)
+    residual ≤ tol || throw(ArgumentError(
+        "kernel = :project deflates the constants, but M𝟙 has norm $(residual) against a " *
+        "tolerance of $(tol); the kernel of this matrix is not what the projection assumes"))
     return nothing
 end
 
@@ -156,7 +188,7 @@ function _bandwidth(M::AbstractMatrix)
 end
 
 @doc raw"""
-    CirculantMass(M, n; kernel = :reject)
+    CirculantMass(M, n; kernel = :reject, rtol = sqrt(eps(T)))
 
 The mass matrix of a uniform periodic mesh, represented by the eigenvalues of its circulant
 structure and a pair of planned real transforms.
@@ -178,7 +210,9 @@ does not.
 
 The first column is read from the assembled matrix rather than recomputed, and the
 construction checks that the matrix really is circulant — a silent mismatch here would give
-wrong answers on every mesh that is uniform by accident rather than by construction.
+wrong answers on every mesh that is uniform by accident rather than by construction. `rtol`
+is the tolerance of that check, *relative* to the largest entry of the first column, so that
+the verdict survives a rescaling of the assembly and holds in every element type.
 
 `kernel = :project` accepts a matrix that is singular with the constants in its kernel, and
 gives the constant mode a zero factor instead of an infinite one. That is the Moore–Penrose
@@ -187,6 +221,11 @@ solution that has none of it. The transform does the whole of the work, so nothi
 to the matrix and nothing is taken out of it. This is what makes a periodic stiffness matrix
 usable here, and it is the rule an FFT Poisson solver applies when it sets the ``k = 0``
 factor to zero rather than dividing by it.
+
+The deflation lives entirely in the stored reciprocal eigenvalues, so the type carries no
+kernel-mode parameter and there is one [`mass_solve!`](@ref) for both modes.
+[`FactorizedMass`](@ref) carries such a parameter because there the two modes are two
+different solves, and the parameter is what selects between them.
 """
 struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
     M::MT
@@ -196,7 +235,8 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
     buf::Vector{Complex{T}}
     n::Int
 
-    function CirculantMass(M::MT, n::Integer; atol = 1e-10, kernel = :reject) where {
+    function CirculantMass(M::MT, n::Integer; rtol = sqrt(eps(T)),
+            kernel = :reject) where {
             T, MT <: AbstractMatrix{T}}
         size(M, 1) == n || throw(DimensionMismatch(
             "the mass matrix is $(size(M, 1))×$(size(M, 2)) but n = $(n)"))
@@ -205,7 +245,7 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
         # Verify rather than assume. A matrix that is banded but not circulant would still
         # produce plausible numbers through the transform, and the failure would show up
         # much later as a wrong conservation law.
-        _check_circulant(M, c, Int(n), atol)
+        _check_circulant(M, c, Int(n), rtol)
 
         # The plans are made UNALIGNED so that they accept any strided argument -- a view
         # into a column of a matrix, in particular, whose alignment an aligned plan would
@@ -259,19 +299,26 @@ function _reciprocal_eigenvalues(ĉ::Vector{Complex{T}}, n::Int, kernel) where {
     throw(_not_a_kernel_mode(kernel))
 end
 
-function _not_circulant(atol)
+function _not_circulant(rtol)
     ArgumentError(
-        "the mass matrix is not circulant to within $(atol); a CirculantMass is only valid on " *
-        "a uniform mesh")
+        "the mass matrix is not circulant to a relative tolerance of $(rtol); a " *
+        "CirculantMass is only valid on a uniform mesh")
 end
 
+# `rtol` is relative to the largest entry of the first column, so the verdict does not change
+# when the assembly is scaled. It defaults to `sqrt(eps(T))`, which is what makes the question
+# answerable in every element type: the residual of a genuinely circulant assembly is
+# rounding, at most ~200·eps of that scale, while a graded mesh misses by 6e-2 of it. An
+# absolute default instead fixes the answer to one element type -- at 1e-10 no `Float32`
+# assembly is circulant at all, since `Float32` rounding alone exceeds it.
+#
 # The generic check: every entry against the first column. Quadratic, which for a dense
 # matrix is what the question costs.
-function _check_circulant(M::AbstractMatrix{T}, c::Vector{T}, n::Int, atol) where {T}
-    tol = atol * max(one(T), maximum(abs, c))
+function _check_circulant(M::AbstractMatrix{T}, c::Vector{T}, n::Int, rtol) where {T}
+    tol = rtol * maximum(abs, c)
     for j in 2:n, i in 1:n
 
-        abs(M[i, j] - c[mod1(i - j + 1, n)]) ≤ tol || throw(_not_circulant(atol))
+        abs(M[i, j] - c[mod1(i - j + 1, n)]) ≤ tol || throw(_not_circulant(rtol))
     end
     return nothing
 end
@@ -282,8 +329,8 @@ end
 # entries in `c` covers the *unstored* positions as well: a column missing one of them cannot
 # reach the count. Both directions in O(nnz), which at n = 512 is 0.004 ms against the 9.1 ms
 # of probing all n^2 positions of a sparse matrix one `getindex` at a time.
-function _check_circulant(M::SparseMatrixCSC{T}, c::Vector{T}, n::Int, atol) where {T}
-    tol = atol * max(one(T), maximum(abs, c))
+function _check_circulant(M::SparseMatrixCSC{T}, c::Vector{T}, n::Int, rtol) where {T}
+    tol = rtol * maximum(abs, c)
     rows = rowvals(M)
     vals = nonzeros(M)
     expected = count(x -> abs(x) > tol, c)
@@ -292,10 +339,10 @@ function _check_circulant(M::SparseMatrixCSC{T}, c::Vector{T}, n::Int, atol) whe
         hits = 0
         for t in nzrange(M, j)
             cᵣ = c[mod1(rows[t] - j + 1, n)]
-            abs(vals[t] - cᵣ) ≤ tol || throw(_not_circulant(atol))
+            abs(vals[t] - cᵣ) ≤ tol || throw(_not_circulant(rtol))
             abs(cᵣ) > tol && (hits += 1)
         end
-        hits == expected || throw(_not_circulant(atol))
+        hits == expected || throw(_not_circulant(rtol))
     end
     return nothing
 end
@@ -402,9 +449,12 @@ each representation for how it is done.
     would reject it.
 """
 function mass_operator(M::AbstractMatrix, ::AbstractBSplineBasis; kernel = :reject)
-    kernel === :reject || throw(ArgumentError(
-        "kernel = $(repr(kernel)) is implemented for a periodic basis only; a bounded basis " *
-        "takes the banded representation, which carries no deflation"))
+    # A name that is not a mode at all is reported as such. Reaching for the basis first would
+    # say that `kernel = :ignore` is implemented for a periodic basis, which it is not.
+    kernel === :project && throw(ArgumentError(
+        "kernel = :project is implemented for a periodic basis only; a bounded basis takes " *
+        "the banded representation, which carries no deflation"))
+    kernel === :reject || throw(_not_a_kernel_mode(kernel))
     return BandedMass(M)
 end
 

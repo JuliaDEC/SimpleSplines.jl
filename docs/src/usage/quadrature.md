@@ -246,9 +246,11 @@ for (name, bb) in (("periodic, uniform", BSplineBasis(UniformMesh(16, 0 .. 2π),
 end
 ```
 
-The circulant construction *verifies* circulance rather than assuming it, to `atol = 1e-10` by
-default. A matrix that is banded but not circulant would still produce plausible numbers
-through the transform, and the failure would surface much later as a wrong conservation law.
+The circulant construction *verifies* circulance rather than assuming it, to `rtol =
+sqrt(eps(T))` by default — *relative* to the largest entry of the first column, so that the
+verdict survives a rescaling of the assembly and holds in every element type. A matrix that is
+banded but not circulant would still produce plausible numbers through the transform, and the
+failure would surface much later as a wrong conservation law.
 
 ```@example asm
 qg = SplineQuadrature(BSplineBasis(GradedMesh(16, 0 .. 2π), 3, Periodic()))

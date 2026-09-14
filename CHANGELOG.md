@@ -23,11 +23,12 @@ Fourier mode is the one that vanishes and that no other does, and `FactorizedMas
 
 For a caller solving a periodic equation, this replaces the textbook rank-one shift
 `S + 𝟙𝟙ᵀ/N`, which removes the singularity by making the matrix structurally full. At degree 4
-on 1024 cells the shift takes a periodic stiffness matrix from 9 216 stored entries (155 816 B)
-to 1 048 576 (16 785 576 B — it stays a `SparseMatrixCSC`, so every entry now carries a row
-index beside it), and construction from `O(N)` to `O(N²)`. The deflation leaves the matrix
-untouched. Measured over 32 to 1024 cells: the deflated solve and the shifted one agree to 1e-15
-relative, and the mean of the result is zero to 1e-15.
+on 1024 cells the shift takes a periodic stiffness matrix `S` from 9 216 stored entries
+(155 816 B) to 1 048 576 (`S .+ inv(N)`, which stays a `SparseMatrixCSC` and so carries a row
+index beside every entry: 16 785 576 B; as the dense `Matrix(S) .+ inv(N)` it is 8 388 656 B),
+and construction from `O(N)` to `O(N²)`. The deflation leaves the matrix untouched. Measured
+over 32 to 1024 cells: the deflated solve and the shifted one agree to 1e-15 relative, and the
+mean of the result is zero to 1e-15.
 
 A bounded basis raises rather than accepting `kernel = :project`; the banded representation
 carries no deflation.
@@ -41,6 +42,27 @@ what came back was amplified noise rather than an error. The tolerance is now re
 `N * eps(T)` times the largest eigenvalue, where `pinv` puts the same cutoff — so a matrix
 singular in this sense raises.
 
+Every tolerance in the mass operators is now relative and depends on the element type. Three
+of them were absolute, and each accepted something it should have refused:
+
+  - The constant-kernel check of `kernel = :project` could not fall below `sqrt(eps(T))`,
+    which made it absolute for every matrix whose entries are smaller than that. An
+    *invertible* mass matrix scaled below 1e-8 was accepted as having the constants in its
+    kernel, and the solve then returned a vector with relative residual of order one rather
+    than raising. The bound is now `N * eps(T)` times `‖M‖∞`, with no floor, which is the
+    standard the circulant path already used.
+  - The circulance check used `atol = 1e-10`, which is below `Float32` rounding: **no
+    `Float32` assembly was circulant at all**, so `CirculantMass` could not be built in that
+    element type and every periodic uniform `Float32` quadrature raised. The tolerance is now
+    `rtol`, relative to the largest entry of the first column and defaulting to
+    `sqrt(eps(T))`.
+  - `FactorizedMass` with `kernel = :project` took CHOLMOD's `issuccess` as proof that the
+    minor is positive definite. CHOLMOD calls a positive *semi*definite factorisation a
+    success, so a matrix whose kernel is one dimension larger than the constants was accepted,
+    and the solve returned amplified noise — for a 4×4 example, entries of 8.5e15 at a
+    residual of 2.0. The pivots of the factor are now read: the smallest must exceed
+    `N * eps(T)` of the largest, where a genuine assembly holds the ratio above 0.19.
+
 ### Breaking Changes
 
 `FactorizedMass` gained a fourth type parameter, which carries the kernel mode
@@ -50,6 +72,11 @@ needs the extra parameter. The constructor is unchanged.
 A `CirculantMass` solve multiplies by precomputed reciprocal eigenvalues instead of dividing by
 the eigenvalues themselves. It moves `N ÷ 2 + 1` divisions out of every solve and into the
 construction, and results can differ in the last ULP.
+
+`CirculantMass`'s `atol` keyword is now `rtol`, and it is relative rather than absolute: the
+tolerance is multiplied by the largest entry of the first column, and it defaults to
+`sqrt(eps(T))` rather than to `1e-10`. A caller that passed `atol` needs the new name, and a
+caller that passed a figure chosen against entries of a particular size needs a new figure.
 
 ## [0.1.0] — 2026-09-07
 

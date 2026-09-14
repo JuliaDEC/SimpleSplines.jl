@@ -124,10 +124,140 @@ using Test
             stiffness_matrix(SplineQuadrature(PeriodicBSplineBasis(GradedMesh(n, 2π), 3))),
             PeriodicBSplineBasis(GradedMesh(n, 2π), 3); kernel = :ignore)
 
+        # a name that is not a mode is reported as one on a bounded basis too, rather than as
+        # a mode that some other basis implements
+        bb = BSplineBasis(UniformMesh(n, 2π), 3)
+        Mb = Matrix(mass_matrix(SplineQuadrature(bb)))
+        err = try
+            mass_operator(Mb, bb; kernel = :ignore)
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("must be :reject or :project", err.msg)
+        @test !occursin("periodic basis only", err.msg)
+
         # the deflation removes the constants specifically, so it verifies that they are
         # what the kernel holds rather than assuming it
         @test_throws ArgumentError SimpleSplines.FactorizedMass(
             sparse(Diagonal([1.0, 0.0, 1.0, 1.0])); kernel = :project)
+    end
+
+    @testset "$(rpad("a kernel larger than the constants is refused by both paths",76))" begin
+        # the projector onto the complement of span{𝟙, v} with v = (1,-1,1,-1): it has 𝟙 in
+        # its kernel, so it passes the constant-kernel check, and v there as well, so the
+        # deflation of the constants alone does not leave an invertible problem behind. Both
+        # v and 𝟙 are constant along diagonals, so the same matrix exercises both
+        # representations.
+        n = 4
+        v = [1.0, -1.0, 1.0, -1.0]
+        P = Matrix(I, n, n) .- ones(n, n) ./ n .- (v * v') ./ n
+
+        @test norm(P * ones(n), Inf) < 1e-14        # the constants are in the kernel
+        @test norm(P * v, Inf) < 1e-14              # and so is a second vector
+
+        @test_throws ArgumentError CirculantMass(P, n; kernel = :project)
+        @test_throws ArgumentError SimpleSplines.FactorizedMass(
+            sparse(P); kernel = :project)
+
+        # both say so, rather than reporting the kernel assertion they did accept
+        for e in (try
+            CirculantMass(P, n; kernel = :project)
+        catch e
+            e
+        end,
+            try
+            SimpleSplines.FactorizedMass(sparse(P); kernel = :project)
+        catch e
+            e
+        end)
+            @test occursin("singular beyond the constants", e.msg)
+        end
+    end
+
+    @testset "$(rpad("the tolerances are relative, so scaling changes no verdict",76))" begin
+        # an absolute tolerance floored at one is absolute for every matrix below that scale,
+        # and it then accepts an invertible matrix as having the constants in its kernel
+        n = 32
+        for meshtype in (UniformMesh, GradedMesh), p in 1:4,
+            s in (1e-12, 1e-8, 1.0, 1e8)
+            b = PeriodicBSplineBasis(meshtype(n, 2π), p)
+            q = SplineQuadrature(b)
+
+            # an invertible assembly is refused at every scale ...
+            @test_throws ArgumentError mass_operator(
+                mass_matrix(q) .* s, b; kernel = :project)
+
+            # ... and a singular one is accepted at every scale, and solves
+            S = stiffness_matrix(q) .* s
+            op = mass_operator(S, b; kernel = :project)
+            rhs = randn(n)
+            rhs .-= sum(rhs) / n
+            # `x` scales like 1/s, so the residual of `S * x` does not depend on s at all
+            x = op \ rhs
+            @test norm(S * x .- rhs, Inf) ≤ 1e-10 * norm(rhs, Inf)
+            @test abs(sum(x)) ≤ 1e-10 * norm(x, Inf) * n
+        end
+
+        # circulance is judged relatively too: a uniform mesh stays circulant under scaling,
+        # and a graded one stays refused
+        M = Matrix(mass_matrix(SplineQuadrature(
+            PeriodicBSplineBasis(UniformMesh(16, 2π), 3))))
+        G = Matrix(mass_matrix(SplineQuadrature(
+            PeriodicBSplineBasis(GradedMesh(16, 2π), 3))))
+        for s in (1e-12, 1.0, 1e12)
+            @test CirculantMass(M .* s, 16) isa CirculantMass
+            @test_throws ArgumentError CirculantMass(G .* s, 16)
+        end
+    end
+
+    @testset "$(rpad("the default tolerances follow the element type",76))" begin
+        # an absolute default fixes the answer to one element type: at 1e-10 no Float32
+        # assembly is circulant at all, because Float32 rounding alone exceeds it
+        for p in 1:4, n in (16, 32, 64)
+
+            q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(n, 2π), p))
+            M32 = Float32.(mass_matrix(q))
+            op = CirculantMass(M32, n)
+            @test op isa CirculantMass{Float32}
+            @test eltype(op) === Float32
+
+            b32 = randn(Float32, n)
+            @test norm(M32 * (op \ b32) .- b32, Inf) < 1.0f-3
+
+            # and the deflation works there too
+            S32 = Float32.(stiffness_matrix(q))
+            opp = CirculantMass(S32, n; kernel = :project)
+            rhs = randn(Float32, n)
+            rhs .-= sum(rhs) / n
+            x = opp \ rhs
+            @test norm(S32 * x .- rhs, Inf) < 1.0f-3
+            @test abs(sum(x)) < 1.0f-3 * n
+        end
+    end
+
+    @testset "$(rpad("the deflated construct and solve infer and do not allocate",76))" begin
+        n = 32
+        bu = PeriodicBSplineBasis(UniformMesh(n, 2π), 3)
+        bg = PeriodicBSplineBasis(GradedMesh(n, 2π), 3)
+        Su = stiffness_matrix(SplineQuadrature(bu))
+        Sg = stiffness_matrix(SplineQuadrature(bg))
+
+        # the keyword is a literal at the call site, so it must constant-propagate into a
+        # concrete type -- a two-way Union here propagates into every consumer downstream.
+        # Written as a function rather than a closure: a closure over a local infers as Any
+        # on the 1.10 compat floor.
+        project(M, b) = mass_operator(M, b; kernel = :project)
+        @test @inferred(project(Su, bu)) isa CirculantMass
+        @test @inferred(project(Sg, bg)) isa FactorizedMass
+
+        # the circulant deflation is a stored zero factor, not a branch, so the solve
+        # allocates no more than the undeflated one does: nothing
+        op = project(Su, bu)
+        x = randn(n)
+        y = similar(x)
+        mass_solve!(y, op, x)
+        @test (@allocated mass_solve!(y, op, x)) == 0
     end
 
     @testset "$(rpad("in-place solve, aliasing, and no allocation",76))" begin
