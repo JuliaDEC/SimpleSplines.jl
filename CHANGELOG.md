@@ -5,6 +5,37 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — targeting 0.2.0
+
+### Circulant mass matrices from first column alone
+
+A caller that can describe a circulant matrix in `O(n)` can now build its mass operator
+without materialising the `O(n²)` entries.
+
+`mass_operator(c::AbstractVector, b::PeriodicBSplineBasis)` takes that first column and
+returns a `CirculantMass` ready to solve, and `CirculantMass(c, n)` does the same one level
+down. The column is wrapped in a new internal type, `SimpleSplines.Circulant`, which stores
+nothing else. Circulance then holds by construction, so `_check_circulant` has nothing left
+to verify — which is what keeps the path `O(n)` in construction as well as in storage, rather
+than `O(n)` in storage and `O(n²)` in the check. `mass_matrix` returns the `Circulant`, and
+`size`, `Matrix` and every solve are unchanged.
+
+The motivating case is a periodic B-spline Poisson solve, which shifts the periodic stiffness
+matrix by the rank-one mean projector before factorising. `S` is sparse and banded, `S + 𝟙𝟙ᵀ/n`
+is structurally full, and both are circulant. At order 5 on a `UniformMesh` of 1024 cells the
+shift takes the matrix from 9 216 to 1 048 576 stored entries, and from 156 kB to 16.8 MB, and
+a `CirculantMass` built from it kept all of that for the life of the operator while reading
+1024 numbers out of it. The caller now writes `mass_operator(S[:, 1] .+ inv(n), b)`.
+
+Only a periodic basis on a `UniformMesh` has a circulant mass matrix, so that is the only
+combination the vector form accepts. A periodic basis on a `GradedMesh` or a `RandomMesh`
+raises an `ArgumentError` rather than falling to the `FactorizedMass` branch, which would
+factorise a matrix the caller never described, and a bounded basis matches no method at all.
+
+**Known limitation:** a `CirculantMass` built from a materialised matrix still stores the whole
+matrix. Dropping it there would make every periodic operator `O(n)`, but it would change what
+`mass_matrix` returns for existing callers, so it is left for a separate decision.
+
 ## [0.1.0] — 2026-09-07
 
 The first release with any implementation in it. Before this the package was a

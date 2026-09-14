@@ -108,7 +108,40 @@ function _bandwidth(M::AbstractMatrix)
 end
 
 @doc raw"""
+    Circulant(c)
+
+The circulant matrix whose first column is `c`, stored as that column and nothing else.
+
+```math
+C_{kl} = c_{(k - l) \bmod n + 1} ,
+```
+
+so every column is the one to its left, rotated down by one. Storage and construction are
+both ``O(n)``, which is what lets [`mass_operator`](@ref) and [`CirculantMass`](@ref) be
+handed the first column of a circulant matrix instead of the ``n^2`` entries of its
+materialisation.
+
+This is an internal representation of a matrix the caller already knows to be circulant, so
+it carries no arithmetic beyond `getindex`, `size` and a `Matrix` that materialises the
+``n^2`` entries on demand. It is not exported; reach it as `SimpleSplines.Circulant`, or let
+`mass_operator(c, basis)` build it.
+"""
+struct Circulant{T, CT <: AbstractVector{T}} <: AbstractMatrix{T}
+    c::CT
+end
+
+Base.size(C::Circulant) = (length(C.c), length(C.c))
+
+# `mod1` wraps any index at all, so an out-of-range one would silently return an entry
+# rather than throw. The bounds check is what keeps that from happening.
+function Base.getindex(C::Circulant, k::Int, l::Int)
+    @boundscheck checkbounds(C, k, l)
+    return @inbounds C.c[mod1(k - l + 1, length(C.c))]
+end
+
+@doc raw"""
     CirculantMass(M, n)
+    CirculantMass(c, n)
 
 The mass matrix of a uniform periodic mesh, represented by the eigenvalues of its circulant
 structure and a pair of planned real transforms.
@@ -131,6 +164,13 @@ does not.
 The first column is read from the assembled matrix rather than recomputed, and the
 construction checks that the matrix really is circulant — a silent mismatch here would give
 wrong answers on every mesh that is uniform by accident rather than by construction.
+
+Given a vector instead, `c` is taken as that first column and wrapped in a
+[`Circulant`](@ref). Circulance then holds by construction, so the check has nothing left to
+verify and the whole path — storage as well as construction — is ``O(n)``. That is the form
+for a caller that can describe its matrix in ``O(n)``, such as a periodic stiffness matrix
+shifted by the rank-one mean projector; `mass_matrix` then returns the `Circulant`, and
+`Matrix` materialises only when something asks for it.
 """
 struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
     M::MT
@@ -146,9 +186,10 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
             "the mass matrix is $(size(M, 1))×$(size(M, 2)) but n = $(n)"))
         c = Vector{T}(M[:, 1])
 
-        # Verify rather than assume. A matrix that is banded but not circulant would still
-        # produce plausible numbers through the transform, and the failure would show up
-        # much later as a wrong conservation law.
+        # Verify rather than assume, wherever the argument does not already carry the
+        # guarantee. A matrix that is banded but not circulant would still produce plausible
+        # numbers through the transform, and the failure would show up much later as a wrong
+        # conservation law.
         _check_circulant(M, c, Int(n), atol)
 
         # The plans are made UNALIGNED so that they accept any strided argument -- a view
@@ -173,6 +214,10 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
     end
 end
 
+# No `atol`: there is nothing here for a tolerance to govern, and a keyword that is accepted
+# and then ignored is worse than one that is absent.
+CirculantMass(c::AbstractVector, n::Integer) = CirculantMass(Circulant(c), n)
+
 function _not_circulant(atol)
     ArgumentError(
         "the mass matrix is not circulant to within $(atol); a CirculantMass is only valid on " *
@@ -189,6 +234,12 @@ function _check_circulant(M::AbstractMatrix{T}, c::Vector{T}, n::Int, atol) wher
     end
     return nothing
 end
+
+# A `Circulant` is circulant by construction, so the check has nothing to verify. Without
+# this method the generic one above would probe all n^2 positions one `getindex` at a time,
+# which is the cost the representation exists to avoid -- storage would be O(n) and
+# construction still O(n^2).
+_check_circulant(::Circulant{T}, ::Vector{T}, ::Int, ::Any) where {T} = nothing
 
 # The sparse check visits only the stored entries. Within a column the row indices are
 # distinct and r = mod1(i-j+1, n) is a bijection on 1:n, so counting the stored entries whose
@@ -296,4 +347,28 @@ mass_operator(M::AbstractMatrix, ::AbstractBSplineBasis) = BandedMass(M)
 
 function mass_operator(M::AbstractMatrix, b::PeriodicBSplineBasis)
     mesh(b) isa UniformMesh ? CirculantMass(M, nbasis(b)) : FactorizedMass(M)
+end
+
+@doc raw"""
+    mass_operator(c::AbstractVector, b::PeriodicBSplineBasis)
+
+Build the [`CirculantMass`](@ref) of the circulant matrix whose **first column** is `c`,
+without materialising the other ``n^2 - n`` entries.
+
+This is the entry point for a caller that can describe its matrix in ``O(n)`` — a periodic
+stiffness matrix shifted by the rank-one mean projector, say, whose first column is
+`S[:, 1] .+ inv(n)` and which is circulant like `S` itself. Handing that matrix over
+assembled costs ``O(n^2)`` to build and ``O(n^2)`` to keep; handing over the column costs
+neither. `c` is wrapped in a [`Circulant`](@ref), which is what the operator stores.
+
+Only a periodic basis on a [`UniformMesh`](@ref) has a circulant mass matrix. A periodic
+basis on any other mesh raises rather than falling to the [`FactorizedMass`](@ref) branch,
+which would factorise a matrix the caller never described, and a bounded basis matches no
+method at all — a first column says nothing about a matrix that is not circulant.
+"""
+function mass_operator(c::AbstractVector, b::PeriodicBSplineBasis)
+    mesh(b) isa UniformMesh || throw(ArgumentError(
+        "a first column describes a circulant matrix, but the mass matrix of a periodic " *
+        "basis on a $(nameof(typeof(mesh(b)))) is not circulant; pass the assembled matrix"))
+    return CirculantMass(c, nbasis(b))
 end

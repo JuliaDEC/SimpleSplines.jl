@@ -57,6 +57,63 @@ using Test
         end
     end
 
+    @testset "$(rpad("a circulant operator built from its first column alone",76))" begin
+        for p in 1:4, n in (12, 15, 16, 32)
+
+            b = PeriodicBSplineBasis(UniformMesh(n, 2π), p)
+            M = Matrix(mass_matrix(SplineQuadrature(b)))
+            c = M[:, 1]
+
+            C = SimpleSplines.Circulant(c)
+            @test C isa AbstractMatrix{Float64}
+            @test size(C) == (n, n)
+            @test Matrix(C) ≈ M
+            @test_throws BoundsError C[n + 1, 1]
+
+            op = mass_operator(c, b)
+            @test op isa CirculantMass
+            @test mass_matrix(op) isa SimpleSplines.Circulant
+            @test size(op) == (n, n)
+            @test Matrix(op) ≈ M
+
+            # the column and the whole matrix describe the same operator
+            ref = CirculantMass(M, n)
+            x = randn(n)
+            @test op \ x ≈ ref \ x atol = 1e-10
+            @test M * (op \ x) ≈ x atol = 1e-10
+        end
+    end
+
+    @testset "$(rpad("what the first-column form rejects",76))" begin
+        n = 16
+        b = PeriodicBSplineBasis(UniformMesh(n, 2π), 3)
+        c = Matrix(mass_matrix(SplineQuadrature(b)))[:, 1]
+
+        @test_throws DimensionMismatch CirculantMass(c, n - 1)
+        # this path does not check circulance, but it does check invertibility
+        @test_throws ArgumentError mass_operator(zeros(n), b)
+        # a periodic basis on a non-uniform mesh has no circulant mass matrix, so a first
+        # column describes nothing; it must not fall to the FactorizedMass branch instead
+        @test_throws ArgumentError mass_operator(c, PeriodicBSplineBasis(GradedMesh(n, 2π), 3))
+        @test_throws MethodError mass_operator(c, BSplineBasis(UniformMesh(n, 2π), 3))
+    end
+
+    @testset "$(rpad("the rank-one shift stays O(n) end to end",76))" begin
+        # the case this exists for: S is circulant and sparse, and S + 𝟙𝟙ᵀ/n is circulant
+        # and structurally full, so only its first column is worth carrying
+        n = 32
+        b = PeriodicBSplineBasis(UniformMesh(n, 2π), 3)
+        S = stiffness_matrix(SplineQuadrature(b))
+
+        dense = mass_operator(Matrix(S) .+ inv(n), b)
+        lean = mass_operator(S[:, 1] .+ inv(n), b)
+
+        x = randn(n)
+        @test lean \ x ≈ dense \ x atol = 1e-10
+        @test Matrix(lean) ≈ Matrix(dense)
+        @test Base.summarysize(mass_matrix(lean)) < Base.summarysize(mass_matrix(dense))
+    end
+
     @testset "$(rpad("in-place solve, aliasing, and no allocation",76))" begin
         q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(32, 2π), 3))
         op = mass_operator(q)

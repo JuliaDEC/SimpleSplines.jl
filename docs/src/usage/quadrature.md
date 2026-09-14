@@ -259,6 +259,38 @@ catch err
 end
 ```
 
+### When the caller already knows the matrix
+
+A caller that can describe a circulant matrix in ``O(N)`` need not materialise it. Hand
+[`mass_operator`](@ref) the **first column** instead of the matrix. The verification above then
+has nothing to check — circulance holds by construction — so storage and construction are both
+``O(N)`` rather than ``O(N^2)``.
+
+The case this exists for is a periodic Poisson solve. Constants lie in the kernel of the
+periodic stiffness matrix, so the solver shifts it by the rank-one mean projector before
+factorising. ``\mathbb{S}`` is sparse and banded, ``\mathbb{S} + \mathbb{1}\mathbb{1}^T/N`` is
+structurally full, and both are circulant.
+
+```@example asm
+bp = BSplineBasis(UniformMesh(64, 0 .. 2π), 3, Periodic())
+qp = SplineQuadrature(bp)
+Sp = stiffness_matrix(qp)
+N = nbasis(bp)
+
+heavy = mass_operator(Matrix(Sp) .+ inv(N), bp)     # N² entries, assembled and kept
+lean = mass_operator(Sp[:, 1] .+ inv(N), bp)        # N entries, and nothing else
+
+rhs = basis_integrals(qp)
+maximum(abs, lean \ rhs .- heavy \ rhs),
+Base.summarysize(mass_matrix(lean)), Base.summarysize(mass_matrix(heavy))
+```
+
+`mass_matrix(op)` returns the column wrapped in a `SimpleSplines.Circulant`, and `Matrix(op)`
+materialises the ``N^2`` entries only when something asks for them. Only a periodic basis on a
+[`UniformMesh`](@ref) has a circulant mass matrix, so this is the only combination the form
+accepts: a periodic basis on any other mesh raises rather than taking the
+[`FactorizedMass`](@ref) branch, and a bounded basis matches no method.
+
 ### Solving
 
 ```julia
