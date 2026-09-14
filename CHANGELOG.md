@@ -49,8 +49,9 @@ of them were absolute, and each accepted something it should have refused:
     which made it absolute for every matrix whose entries are smaller than that. An
     *invertible* mass matrix scaled below 1e-8 was accepted as having the constants in its
     kernel, and the solve then returned a vector with relative residual of order one rather
-    than raising. The bound is now `N * eps(T)` times `‖M‖∞`, with no floor, which is the
-    standard the circulant path already used.
+    than raising. The bound is now a decade above `N * eps(T)` times `‖M‖∞`, with no floor:
+    the residual of a genuine singular assembly saturates half that scale in the worst case,
+    and the smallest violation an invertible one produces sits 1e4 to 1e12 above it.
   - The circulance check used `atol = 1e-10`, which is below `Float32` rounding: **no
     `Float32` assembly was circulant at all**, so `CirculantMass` could not be built in that
     element type and every periodic uniform `Float32` quadrature raised. The tolerance is now

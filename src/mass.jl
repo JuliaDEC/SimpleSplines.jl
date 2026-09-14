@@ -105,7 +105,7 @@ end
 # positive definite to working precision exactly when the smallest is above `n * eps` of the
 # largest -- the same relative standard `_check_constant_kernel` and `_reciprocal_eigenvalues`
 # hold their own assertions to. A matrix whose kernel is `span{𝟙, v}` puts that ratio at 2e-16,
-# where a genuine assembly holds it above 0.19 over degrees 1 to 4 and 16 to 256 cells.
+# where a genuine assembly holds it above 0.18 -- `scripts/mass_tolerance_margins.jl`.
 function _check_definite_minor(F)
     issuccess(F) || throw(_singular_beyond_the_constants())
     d = diag(F)
@@ -119,17 +119,20 @@ end
 # the same path, and both the positive-definite minor and the mean-free gauge would then be
 # answering a question nobody asked.
 #
-# The bound is `n * eps(T)` relative to ‖M‖∞, which is the row-sum scale `M𝟙` is measured on,
-# and it is the standard `_reciprocal_eigenvalues` holds the circulant path to. It has to be
-# *relative* and it has to have no floor: a bound that cannot fall below one is absolute for
+# The scale is `n * eps(T)` relative to ‖M‖∞, the row-sum scale `M𝟙` is measured on. It has to
+# be *relative* and it has to have no floor: a bound that cannot fall below one is absolute for
 # every matrix smaller than that, and accepts any invertible matrix scaled down far enough.
-# `M𝟙` of a genuine singular assembly is pure rounding and grows with n like the bound does --
-# over degrees 1 to 8 and 64 to 4096 cells it reaches 0.16 of it, where an invertible mass
-# matrix sits 10¹³ above it in the same units.
+#
+# `M𝟙` of a genuine singular assembly is rounding, and it saturates about half of that scale in
+# the worst corner -- n barely above 2p+1, where every row is nearly full. The gate therefore
+# sits a decade above the scale rather than on it. It can afford to: the two sides are not in
+# competition here, since the smallest violation an invertible assembly produces is 10⁴ (single
+# precision) to 10¹² (double) above the scale. `scripts/mass_tolerance_margins.jl` measures
+# both sides.
 function _check_constant_kernel(M::AbstractMatrix{T}) where {T}
     n = size(M, 2)
     residual = norm(M * ones(T, n), Inf)
-    tol = n * eps(T) * norm(M, Inf)
+    tol = 10 * n * eps(T) * norm(M, Inf)
     residual ≤ tol || throw(ArgumentError(
         "kernel = :project deflates the constants, but M𝟙 has norm $(residual) against a " *
         "tolerance of $(tol); the kernel of this matrix is not what the projection assumes"))
@@ -308,9 +311,10 @@ end
 # `rtol` is relative to the largest entry of the first column, so the verdict does not change
 # when the assembly is scaled. It defaults to `sqrt(eps(T))`, which is what makes the question
 # answerable in every element type: the residual of a genuinely circulant assembly is
-# rounding, at most ~200·eps of that scale, while a graded mesh misses by 6e-2 of it. An
-# absolute default instead fixes the answer to one element type -- at 1e-10 no `Float32`
-# assembly is circulant at all, since `Float32` rounding alone exceeds it.
+# rounding, at most 180·eps of that scale, while a graded mesh misses by 6e-2 of it
+# (`scripts/mass_tolerance_margins.jl`). An absolute default instead fixes the answer to one
+# element type -- at 1e-10 no `Float32` assembly is circulant at all, since `Float32` rounding
+# alone exceeds it.
 #
 # The generic check: every entry against the first column. Quadratic, which for a dense
 # matrix is what the question costs.
