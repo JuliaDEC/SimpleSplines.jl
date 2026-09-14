@@ -23,10 +23,11 @@ Fourier mode is the one that vanishes and that no other does, and `FactorizedMas
 
 For a caller solving a periodic equation, this replaces the textbook rank-one shift
 `S + 𝟙𝟙ᵀ/N`, which removes the singularity by making the matrix structurally full. At degree 4
-on 1024 cells the shift takes a periodic stiffness matrix from 11 264 stored entries
-(188 584 B) to 1 048 576 (16 785 576 B), and construction from `O(N)` to `O(N²)`. The
-deflation leaves the matrix untouched. Measured: the deflated solve reproduces the shifted one
-to 1e-13, and returns a solution whose mean is zero to 1e-17.
+on 1024 cells the shift takes a periodic stiffness matrix from 9 216 stored entries (155 816 B)
+to 1 048 576 (16 785 576 B — it stays a `SparseMatrixCSC`, so every entry now carries a row
+index beside it), and construction from `O(N)` to `O(N²)`. The deflation leaves the matrix
+untouched. Measured over 32 to 1024 cells: the deflated solve and the shifted one agree to 1e-15
+relative, and the mean of the result is zero to 1e-15.
 
 A bounded basis raises rather than accepting `kernel = :project`; the banded representation
 carries no deflation.

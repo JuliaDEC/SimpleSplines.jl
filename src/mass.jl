@@ -10,7 +10,7 @@ Three representations are provided, and which one is built is decided by the bas
   - [`CirculantMass`](@ref) for a periodic basis on a [`UniformMesh`](@ref), where the basis
     functions are translates of a single cardinal spline and ``\mathbb{M}`` is *circulant*,
     hence diagonalised by the discrete Fourier transform. A solve is two transforms and a
-    pointwise division, ``O(N \log N)``, with the transforms planned once.
+    pointwise multiplication, ``O(N \log N)``, with the transforms planned once.
   - [`BandedMass`](@ref) for a bounded basis. The overlaps are contiguous — there is no seam —
     so the matrix is banded outright and a banded Cholesky solves it in ``O(Np)`` with no
     allocation at all.
@@ -68,7 +68,8 @@ struct FactorizedMass{T, MT, FT, K} <: MassOperator{T}
     M::MT
     fact::FT
 
-    function FactorizedMass(M::MT; kernel = :reject) where {T, MT <: AbstractMatrix{T}}
+    Base.@constprop :aggressive function FactorizedMass(M::MT;
+            kernel = :reject) where {T, MT <: AbstractMatrix{T}}
         if kernel === :reject
             F = cholesky(Symmetric(M); check = false)
             issuccess(F) || throw(ArgumentError(
@@ -169,7 +170,7 @@ On a uniform mesh every basis function is a translate of one cardinal spline, so
 ```
 
 with ``F`` the discrete Fourier transform. A solve is therefore a forward transform, a
-pointwise division and an inverse transform.
+pointwise multiplication by the reciprocals of ``\hat{c}``, and an inverse transform.
 
 The plans are created once, at construction, and the spectral buffer is preallocated, so a
 solve allocates nothing beyond its result. `\` allocates the result; [`mass_solve!`](@ref)
@@ -334,8 +335,9 @@ end
 # own constant part is out of the way, and determines it only up to a constant. The first
 # degree of freedom is the one the factorisation dropped: it is set to zero, which picks one
 # solution, and the mean is taken out afterwards, which picks the one in the complement of
-# the kernel. Both steps are O(N), and the temporary is the one the CHOLMOD solve allocates
-# in any case.
+# the kernel. Both steps are O(N). Two temporaries are allocated: the mean-free right-hand
+# side, which is what the factor is given, and the one the CHOLMOD solve produces in any
+# case.
 function mass_solve!(y::AbstractVector, op::FactorizedMass{T, MT, FT, :project},
         x::AbstractVector) where {T, MT, FT}
     n = length(x)

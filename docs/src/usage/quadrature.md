@@ -232,7 +232,7 @@ that are not translates of anything.
 
 | basis | mesh | representation | a solve is |
 |:--|:--|:--|:--|
-| [`PeriodicBSplineBasis`](@ref) | [`UniformMesh`](@ref) | [`CirculantMass`](@ref) | two planned transforms and a pointwise division, ``O(N\log N)``, no allocation |
+| [`PeriodicBSplineBasis`](@ref) | [`UniformMesh`](@ref) | [`CirculantMass`](@ref) | two planned transforms and a pointwise multiplication, ``O(N\log N)``, no allocation |
 | [`PeriodicBSplineBasis`](@ref) | any other | [`FactorizedMass`](@ref) | a sparse Cholesky; the only representation whose solve allocates |
 | bounded — clamped or recombined | any | [`BandedMass`](@ref) | a banded Cholesky, ``O(Np)``, no allocation |
 
