@@ -1,6 +1,6 @@
 name = "SimpleSplines"
 uuid = "ac480f6c-9a94-4d53-a283-9db69f109154"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Michael Kraus"]
 
 [deps]
