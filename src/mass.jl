@@ -22,6 +22,18 @@ Three representations are provided, and which one is built is decided by the bas
 
 All three answer `\`, `ldiv!` and `Matrix`.
 
+A mass matrix is positive definite, but the same three representations carry the other
+assemblies of a [`SplineQuadrature`](@ref), and a stiffness matrix on a periodic basis is
+*singular*: the constants the basis represents lie in its kernel. The `kernel` keyword says
+what to do about that. `:reject` is the default and throws, since a singular assembly is
+usually too coarse a quadrature rather than an intended one. `:project` states that the
+kernel is the constants and asks for the solution that has no constant component — the
+mean-free solution — which is what ``-\phi'' = \rho`` on a periodic domain asks for. Both
+periodic representations implement it, each in the way its own structure allows, and both
+verify the assertion rather than trusting it. Neither forms the rank-one shift
+``\mathbb{M} + \mathbb{1}\mathbb{1}^T/N`` that would remove the singularity by filling the
+matrix in completely.
+
 !!! note "Where this does and does not matter"
     A mass solve is a small part of the cost of these discretisations — at ``N = 384`` it is
     around ``0.06`` ms against a ``2`` ms implicit step. The transform is used because it is
@@ -34,7 +46,7 @@ abstract type MassOperator{T} end
 Base.eltype(::MassOperator{T}) where {T} = T
 
 @doc raw"""
-    FactorizedMass(M)
+    FactorizedMass(M; kernel = :reject)
 
 The sparse Cholesky factorisation of the mass matrix, for meshes on which it is not
 circulant.
@@ -42,18 +54,53 @@ circulant.
 ``\mathbb{M}`` is symmetric positive definite and banded modulo ``N`` — a basis function
 overlaps only the ``2p+1`` others whose supports meet its own — so the factorisation is
 cheap and the solve is ``O(Np)``.
+
+With `kernel = :project` the matrix may be singular instead, with the constants in its
+kernel. What is factorised is then the minor that drops the first degree of freedom, which is
+positive definite exactly when the kernel is the constants and nothing more: a vector
+supported away from the first index lies in the span of ``\mathbb{1}`` only if it is zero.
+The dropped degree of freedom is the gauge, and [`mass_solve!`](@ref) fixes it afterwards by
+taking the mean out. Deleting a row and a column preserves the sparsity; the rank-one shift
+``\mathbb{M} + \mathbb{1}\mathbb{1}^T/N``, which also removes the singularity, makes the
+matrix structurally full and the factorisation ``O(N^2)``.
 """
-struct FactorizedMass{T, MT, FT} <: MassOperator{T}
+struct FactorizedMass{T, MT, FT, K} <: MassOperator{T}
     M::MT
     fact::FT
 
-    function FactorizedMass(M::MT) where {T, MT <: AbstractMatrix{T}}
-        F = cholesky(Symmetric(M); check = false)
-        issuccess(F) || throw(ArgumentError(
-            "the mass matrix is not positive definite; the quadrature is too coarse to " *
-            "resolve the basis"))
-        new{T, MT, typeof(F)}(M, F)
+    function FactorizedMass(M::MT; kernel = :reject) where {T, MT <: AbstractMatrix{T}}
+        if kernel === :reject
+            F = cholesky(Symmetric(M); check = false)
+            issuccess(F) || throw(ArgumentError(
+                "the mass matrix is not positive definite; the quadrature is too coarse to " *
+                "resolve the basis"))
+            return new{T, MT, typeof(F), :reject}(M, F)
+        elseif kernel === :project
+            _check_constant_kernel(M)
+            F = cholesky(Symmetric(M[2:end, 2:end]); check = false)
+            issuccess(F) || throw(ArgumentError(
+                "the matrix is singular beyond the constants: the minor that drops the " *
+                "first degree of freedom is not positive definite either"))
+            return new{T, MT, typeof(F), :project}(M, F)
+        end
+        throw(_not_a_kernel_mode(kernel))
     end
+end
+
+function _not_a_kernel_mode(kernel)
+    ArgumentError("kernel must be :reject or :project, not $(repr(kernel))")
+end
+
+# `:project` deflates the constants specifically, so it is correct only where that is what the
+# kernel holds. Verify rather than assume: a matrix singular for some other reason would take
+# the same path, and both the positive-definite minor and the mean-free gauge would then be
+# answering a question nobody asked.
+function _check_constant_kernel(M::AbstractMatrix{T}) where {T}
+    residual = norm(M * ones(T, size(M, 2)), Inf)
+    residual ≤ sqrt(eps(T)) * max(one(T), norm(M, Inf)) || throw(ArgumentError(
+        "kernel = :project deflates the constants, but M𝟙 has norm $(residual); the kernel " *
+        "of this matrix is not what the projection assumes"))
+    return nothing
 end
 
 @doc raw"""
@@ -108,7 +155,7 @@ function _bandwidth(M::AbstractMatrix)
 end
 
 @doc raw"""
-    CirculantMass(M, n)
+    CirculantMass(M, n; kernel = :reject)
 
 The mass matrix of a uniform periodic mesh, represented by the eigenvalues of its circulant
 structure and a pair of planned real transforms.
@@ -131,16 +178,24 @@ does not.
 The first column is read from the assembled matrix rather than recomputed, and the
 construction checks that the matrix really is circulant — a silent mismatch here would give
 wrong answers on every mesh that is uniform by accident rather than by construction.
+
+`kernel = :project` accepts a matrix that is singular with the constants in its kernel, and
+gives the constant mode a zero factor instead of an infinite one. That is the Moore–Penrose
+pseudoinverse: the solve drops the constant component of the right-hand side and returns the
+solution that has none of it. The transform does the whole of the work, so nothing is added
+to the matrix and nothing is taken out of it. This is what makes a periodic stiffness matrix
+usable here, and it is the rule an FFT Poisson solver applies when it sets the ``k = 0``
+factor to zero rather than dividing by it.
 """
 struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
     M::MT
-    ĉ::Vector{Complex{T}}
+    ĉ⁻¹::Vector{Complex{T}}
     plan::PT
     iplan::IT
     buf::Vector{Complex{T}}
     n::Int
 
-    function CirculantMass(M::MT, n::Integer; atol = 1e-10) where {
+    function CirculantMass(M::MT, n::Integer; atol = 1e-10, kernel = :reject) where {
             T, MT <: AbstractMatrix{T}}
         size(M, 1) == n || throw(DimensionMismatch(
             "the mass matrix is $(size(M, 1))×$(size(M, 2)) but n = $(n)"))
@@ -164,13 +219,43 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
         buf = Vector{Complex{T}}(undef, n ÷ 2 + 1)
         plan = plan_rfft(c; flags = FFTW.ESTIMATE | FFTW.UNALIGNED)
         iplan = plan_irfft(buf, n; flags = FFTW.ESTIMATE | FFTW.UNALIGNED)
-        ĉ = plan * c
+        ĉ⁻¹ = _reciprocal_eigenvalues(plan * c, Int(n), kernel)
 
-        all(x -> abs(x) > eps(T), ĉ) || throw(ArgumentError(
-            "the circulant mass matrix has a zero eigenvalue and is not invertible"))
-
-        new{T, MT, typeof(plan), typeof(iplan)}(M, ĉ, plan, iplan, buf, Int(n))
+        new{T, MT, typeof(plan), typeof(iplan)}(M, ĉ⁻¹, plan, iplan, buf, Int(n))
     end
+end
+
+# The solve multiplies by these rather than dividing by the eigenvalues themselves. It moves
+# n ÷ 2 + 1 divisions out of every solve and into the construction, and it is what lets the
+# kernel carry a zero factor rather than a branch in the inner loop.
+#
+# One tolerance decides both modes, and it is *relative*: `n * eps` below the largest
+# eigenvalue is where `pinv` puts the same cutoff, and an eigenvalue there is not
+# distinguishable from zero by a transform that accumulated its own rounding on the way. An
+# absolute bound instead calls a singular matrix invertible whenever its entries are large
+# enough -- a periodic stiffness matrix has `|ĉ₀| ≈ 10⁻¹⁴` rather than zero, and the solve
+# that follows divides by it.
+function _reciprocal_eigenvalues(ĉ::Vector{Complex{T}}, n::Int, kernel) where {T}
+    tol = n * eps(T) * maximum(abs, ĉ)
+    if kernel === :reject
+        all(x -> abs(x) > tol, ĉ) || throw(ArgumentError(
+            "the circulant mass matrix has a zero eigenvalue and is not invertible; pass " *
+            "kernel = :project to solve in the complement of the kernel instead"))
+        return inv.(ĉ)
+    elseif kernel === :project
+        # The constant mode is ĉ[1] and nothing else, so this deflates the same subspace the
+        # factorised representation deflates, and it verifies that the subspace is the whole
+        # of the kernel rather than zeroing whichever mode happens to come out small.
+        abs(ĉ[1]) ≤ tol || throw(ArgumentError(
+            "kernel = :project deflates the constants, but the constant mode of this " *
+            "matrix has eigenvalue $(abs(ĉ[1])); its kernel is not what the projection " *
+            "assumes"))
+        all(x -> abs(x) > tol, @view ĉ[2:end]) || throw(ArgumentError(
+            "the matrix is singular beyond the constants: a second mode of the transform " *
+            "vanishes as well"))
+        return [i == 1 ? zero(z) : inv(z) for (i, z) in enumerate(ĉ)]
+    end
+    throw(_not_a_kernel_mode(kernel))
 end
 
 function _not_circulant(atol)
@@ -239,8 +324,25 @@ function mass_solve! end
 # is the only representation here that does, and it is reached only by a periodic basis on a
 # non-uniform mesh -- the one case that is neither circulant nor banded. A bounded basis on
 # the same mesh goes through `BandedMass`, which allocates nothing.
-function mass_solve!(y::AbstractVector, op::FactorizedMass, x::AbstractVector)
+function mass_solve!(y::AbstractVector, op::FactorizedMass{T, MT, FT, :reject},
+        x::AbstractVector) where {T, MT, FT}
     copyto!(y, op.fact \ x)
+    return y
+end
+
+# The constants are in the kernel, so the right-hand side determines a solution only once its
+# own constant part is out of the way, and determines it only up to a constant. The first
+# degree of freedom is the one the factorisation dropped: it is set to zero, which picks one
+# solution, and the mean is taken out afterwards, which picks the one in the complement of
+# the kernel. Both steps are O(N), and the temporary is the one the CHOLMOD solve allocates
+# in any case.
+function mass_solve!(y::AbstractVector, op::FactorizedMass{T, MT, FT, :project},
+        x::AbstractVector) where {T, MT, FT}
+    n = length(x)
+    ŷ = op.fact \ @views(x[2:n] .- sum(x) / n)
+    y[1] = zero(eltype(y))
+    copyto!(view(y, 2:n), ŷ)
+    y .-= sum(y) / n
     return y
 end
 
@@ -253,7 +355,7 @@ end
 
 function mass_solve!(y::AbstractVector, op::CirculantMass, x::AbstractVector)
     mul!(op.buf, op.plan, x)
-    op.buf ./= op.ĉ
+    op.buf .*= op.ĉ⁻¹
     mul!(y, op.iplan, op.buf)
     return y
 end
@@ -276,12 +378,17 @@ function Base.:\(op::MassOperator, X::AbstractMatrix)
 end
 
 @doc raw"""
-    mass_operator(M, basis)
+    mass_operator(M, basis; kernel = :reject)
 
 Build the [`MassOperator`](@ref) appropriate to `basis`: a [`CirculantMass`](@ref) for a
 periodic basis on a [`UniformMesh`](@ref), a [`FactorizedMass`](@ref) for a periodic basis on
 any other mesh, and a [`BandedMass`](@ref) for a bounded basis — clamped or recombined —
 whose mass matrix has no seam to wrap across.
+
+`kernel = :project` passes the deflation on to whichever of the two periodic representations
+is chosen, so that a caller with a singular assembly says what it wants rather than which
+representation implements it. See [`MassOperator`](@ref) for what the deflation means and
+each representation for how it is done.
 
 !!! note "Circulance is a property of the basis, not of the mesh"
     A uniform mesh is necessary but not sufficient. The mass matrix is circulant only when
@@ -292,8 +399,14 @@ whose mass matrix has no seam to wrap across.
     wrong answers everywhere except in [`CirculantMass`](@ref)'s own verification, which
     would reject it.
 """
-mass_operator(M::AbstractMatrix, ::AbstractBSplineBasis) = BandedMass(M)
+function mass_operator(M::AbstractMatrix, ::AbstractBSplineBasis; kernel = :reject)
+    kernel === :reject || throw(ArgumentError(
+        "kernel = $(repr(kernel)) is implemented for a periodic basis only; a bounded basis " *
+        "takes the banded representation, which carries no deflation"))
+    return BandedMass(M)
+end
 
-function mass_operator(M::AbstractMatrix, b::PeriodicBSplineBasis)
-    mesh(b) isa UniformMesh ? CirculantMass(M, nbasis(b)) : FactorizedMass(M)
+function mass_operator(M::AbstractMatrix, b::PeriodicBSplineBasis; kernel = :reject)
+    mesh(b) isa UniformMesh ? CirculantMass(M, nbasis(b); kernel) :
+    FactorizedMass(M; kernel)
 end

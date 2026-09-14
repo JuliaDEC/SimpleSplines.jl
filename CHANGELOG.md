@@ -5,6 +5,51 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — targeting 0.2.0
+
+### New Features
+
+A `kernel` keyword on `mass_operator`, `CirculantMass` and `FactorizedMass` handles singular
+assemblies on periodic bases. The three `MassOperator` representations carry not only the mass
+matrix but also other assemblies from a `SplineQuadrature`, and a stiffness matrix on a periodic
+basis is singular: the constants lie in its kernel because `-φ'' = ρ` says nothing about them.
+
+`kernel = :reject` keeps the previous behaviour — a singular matrix raises an error.
+`kernel = :project` states that the kernel is the constants and asks for the mean-free
+solution. Both periodic representations implement it in the way their own structure allows, and
+both verify the assertion rather than trusting it: `CirculantMass` checks that the constant
+Fourier mode is the one that vanishes and that no other does, and `FactorizedMass` checks that
+`M𝟙 ≈ 0`.
+
+For a caller solving a periodic equation, this replaces the textbook rank-one shift
+`S + 𝟙𝟙ᵀ/N`, which removes the singularity by making the matrix structurally full. At degree 4
+on 1024 cells the shift takes a periodic stiffness matrix from 11 264 stored entries
+(188 584 B) to 1 048 576 (16 785 576 B), and construction from `O(N)` to `O(N²)`. The
+deflation leaves the matrix untouched. Measured: the deflated solve reproduces the shifted one
+to 1e-13, and returns a solution whose mean is zero to 1e-17.
+
+A bounded basis raises rather than accepting `kernel = :project`; the banded representation
+carries no deflation.
+
+### Bug Fixes
+
+The circulant invertibility check used an absolute tolerance, and so accepted a singular
+matrix. The zero eigenvalue of a periodic stiffness matrix comes out of the transform at about
+1e-14 rather than at zero, so `abs(λ) > eps(T)` passed it, the solve then divided by it, and
+what came back was amplified noise rather than an error. The tolerance is now relative —
+`N * eps(T)` times the largest eigenvalue, where `pinv` puts the same cutoff — so a matrix
+singular in this sense raises.
+
+### Breaking Changes
+
+`FactorizedMass` gained a fourth type parameter, which carries the kernel mode
+(`{T, MT, FT, K}`). Code that spells the type out as `FactorizedMass{T, MT, FT}` in a signature
+needs the extra parameter. The constructor is unchanged.
+
+A `CirculantMass` solve multiplies by precomputed reciprocal eigenvalues instead of dividing by
+the eigenvalues themselves. It moves `N ÷ 2 + 1` divisions out of every solve and into the
+construction, and results can differ in the last ULP.
+
 ## [0.1.0] — 2026-09-07
 
 The first release with any implementation in it. Before this the package was a
