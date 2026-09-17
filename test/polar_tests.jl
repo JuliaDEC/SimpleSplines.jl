@@ -24,7 +24,14 @@ using Test
         @test order(B) == (4, 4)
         @test ncells(B) == (10, 16)
         @test bases(B) === (radial, angular)
+        @test meshwidth(B) == meshwidth(parent(B))
+        @test mesh(B) == mesh(parent(B))
+        @test domain(B) == domain(parent(B))
         @test pole(B) == 0.0
+
+        s = repr(B)
+        @test occursin("PolarSplineBasis{Float64}", s)
+        @test occursin("pole triangle of 3 for 2×$(Nθ)", s)
         @test B == PolarSplineBasis(radial ⊗ angular)
         @test hash(B) == hash(PolarSplineBasis(radial ⊗ angular))
 
@@ -202,6 +209,10 @@ using Test
         end
 
         @test evaluate(B, û, [(0.3, 1.0), (0.6, 2.0)]) ≈
+              [evaluate(B, û, (0.3, 1.0)), evaluate(B, û, (0.6, 2.0))]
+        # A single point written as a vector is a point, not a one-element list of points.
+        @test evaluate(B, û, [0.3, 1.0]) == evaluate(B, û, (0.3, 1.0))
+        @test evaluate(B, û, [[0.3, 1.0], [0.6, 2.0]]) ≈
               [evaluate(B, û, (0.3, 1.0)), evaluate(B, û, (0.6, 2.0))]
         @test B[(0.3, 1.0), 7] == evaluate(B, 7, (0.3, 1.0))
         @test B((0.3, 1.0), 7) == evaluate(B, 7, (0.3, 1.0))

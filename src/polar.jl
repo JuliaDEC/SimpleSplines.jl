@@ -132,6 +132,8 @@ struct PolarSplineBasis{T, PT <: TensorProductBasis{T, 2}}
     λ::Matrix{T}
     R::SparseMatrixCSC{T, Int}
     triangle::Matrix{T}
+    cosθ::Vector{T}
+    sinθ::Vector{T}
 
     function PolarSplineBasis(parent::PT) where {T, PT <: TensorProductBasis{T, 2}}
         radial, angular = bases(parent)
@@ -185,7 +187,13 @@ struct PolarSplineBasis{T, PT <: TensorProductBasis{T, 2}}
 
         R = _polar_recombination(λ, Ns, Nθ)
 
-        new{T, PT}(parent, λ, R, triangle)
+        # The coefficients of the chart splines C and S; see `pseudo_cartesian`. They are
+        # fixed for the basis and a per-point rebuild is O(Nθ) in a routine called once per
+        # quadrature point.
+        cosθ = T[cos(θj) for θj in θ]
+        sinθ = T[sin(θj) for θj in θ]
+
+        new{T, PT}(parent, λ, R, triangle, cosθ, sinθ)
     end
 end
 
@@ -293,10 +301,9 @@ julia> x̃, ỹ = pseudo_cartesian(B, (0.5, 0.0)); abs(x̃ - 0.5) < 0.02, abs(�
 """
 function pseudo_cartesian(B::PolarSplineBasis{T}, x) where {T}
     radial, angular = bases(B.parent)
-    θ = nodes(angular)
     s = x[1] - leftendpoint(domain(radial))
-    C = evaluate(angular, cos.(θ), x[2])
-    S = evaluate(angular, sin.(θ), x[2])
+    C = evaluate(angular, B.cosθ, x[2])
+    S = evaluate(angular, B.sinθ, x[2])
     return (s * C, s * S)
 end
 
@@ -399,7 +406,10 @@ function evaluate(B::PolarSplineBasis{T}, û::AbstractVector{S}, x,
     evaluate(B.parent, parent_coefficients(B, û), x, d)
 end
 
-function evaluate(B::PolarSplineBasis{T}, û::AbstractVector{S}, X::AbstractVector,
+# Dispatch on the element type rather than on `AbstractVector` alone: a single point written
+# as `[s, θ]` is an `AbstractVector` too, and it belongs to the method above.
+function evaluate(B::PolarSplineBasis{T}, û::AbstractVector{S},
+        X::AbstractVector{<:Union{Tuple, AbstractVector}},
         d::NTuple{2, Int} = (0, 0)) where {T, S}
     ĉ = parent_coefficients(B, û)
     [evaluate(B.parent, ĉ, x, d) for x in X]
@@ -491,7 +501,7 @@ end
 ## ---------------------------------------------------------------------------------------
 
 @doc raw"""
-    PolarSplineQuadrature(B; nq = quadrature_order.(degree(B)), dmax = 3)
+    PolarSplineQuadrature(B; nq = map(quadrature_order, degree(B)), dmax = 3)
 
 The assembly table of a [`PolarSplineBasis`](@ref): the parent's
 [`TensorProductQuadrature`](@ref), together with the tabulations and the mass factorisation
@@ -670,7 +680,7 @@ metric bracket depends on the state and changes at every Newton iteration.
 """
 function weighted_matrix(q::PolarSplineQuadrature, f, a::NTuple{2, Int}, b::NTuple{2, Int})
     x = quadrature_nodes(q)
-    weighted_matrix(q, [f(pt) for pt in Iterators.product(x...)][:], a, b)
+    weighted_matrix(q, vec([f(pt) for pt in Iterators.product(x...)]), a, b)
 end
 
 function weighted_matrix(q::PolarSplineQuadrature, f::AbstractVector, a::NTuple{2, Int},
@@ -759,7 +769,7 @@ function l2_projection!(û::AbstractVector, q::PolarSplineQuadrature, f)
     length(û) == nbasis(q) || throw(DimensionMismatch(
         "the coefficient vector has $(length(û)) entries but the basis has $(nbasis(q))"))
     F = f isa AbstractVector ? f :
-        [f(pt) for pt in Iterators.product(quadrature_nodes(q)...)][:]
+        vec([f(pt) for pt in Iterators.product(quadrature_nodes(q)...)])
     length(F) == length(q.w) || throw(DimensionMismatch(
         "the sample has $(length(F)) entries but the quadrature grid has $(length(q.w))"))
     copyto!(û, basis_values(q, (0, 0)) * (F .* q.w))
