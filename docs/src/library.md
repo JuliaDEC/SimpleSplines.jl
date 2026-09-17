@@ -138,6 +138,20 @@ quadrature_sample
 contract
 ```
 
+## Polar splines
+
+```@docs
+PolarSplineBasis
+PolarSplineQuadrature
+pole
+pole_triangle
+pseudo_cartesian
+parent_coefficients
+```
+
+[`recombination_matrix`](@ref) is shared with [`RecombinedBSplineBasis`](@ref) and is
+documented under [Bases](@ref) above; its polar method is listed there.
+
 ## Splines
 
 ```@docs

@@ -7,6 +7,70 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] — targeting 0.3.0
 
+### New Features
+
+Polar spline spaces, `PolarSplineBasis(radial, angular)`, handle parameter rectangles whose left
+radial edge is a pole — a single point of the physical domain reached from every angle, as on a
+mapped disk.
+
+A tensor product of a radial and an angular basis is discontinuous at the pole, because the
+geometry map collapses the whole circle s = 0 to a single point and nothing constrains the
+basis's θ-dependence there. `PolarSplineBasis` replaces the first two rows of the radial
+basis (2·Nθ functions) with a "pole triangle" of three, spanning the constants and the two linear
+functions of a pseudo-Cartesian chart at the pole. This makes the space C⁰ and C¹ at the pole by
+construction. The basis has `nbasis = 3 + (Ns−2)·Nθ` functions. The construction follows Toshniwal,
+Speleers, Hiemstra & Hughes, CMAME 316 (2017) 1005–1061.
+
+A pole is not a boundary condition — it couples the two axes — so it is not reachable through
+`BSplineBasis(mesh, p, bc)`, and the tensor-product layer's independent-per-axis promise is
+untouched. The space is a partition of unity including across the pole rows and non-negative; the
+pole-triangle vertex radius buys both. It contains 1, x̃ and ỹ (the chart's constants and
+linears) exactly, to round-off.
+
+Coefficients are a **vector**, not an array: the index set is not a product. `parent_coefficients(B, û)`
+gives the parent tensor-product coefficient array. `evaluate_all(B, x, d)` returns `(idx, values)` —
+the global indices of the nonzero block — rather than a first index, because the block is not
+contiguous. `recombination_matrix` is extended to the new basis, so the polar space conjugates
+the parent tensor product by a sparse matrix, exactly as `RecombinedBSplineBasis` does in one
+dimension.
+
+`PolarSplineQuadrature(B)` provides assembly operations: `basis_values`, `mass_matrix`,
+`mass_operator`, `mixed_matrix`, `weighted_matrix`, `stiffness_matrix`, `basis_integrals`,
+`l2_projection`. There is no `KroneckerMass` — the pole rows break the Kronecker structure — so
+the mass matrix is a sparse Cholesky factorisation with only a 3×3 dense block rather than one
+solve per axis, and tabulation is a single memoised N×Q matrix instead of per-axis tables.
+
+Six new exports: `PolarSplineBasis`, `PolarSplineQuadrature`, `pole`, `pole_triangle`,
+`pseudo_cartesian`, `parent_coefficients`.
+
+**Measurements**, all reproducible by archived scripts in `scripts/`:
+
+- **Continuity at the pole.** Over 32 angles: C⁰ spread is 3.3×10⁻¹⁶ for a random polar spline
+  and 5.0×10⁻¹⁶ for the worst single basis function, against 2.3 for a tensor-product control.
+  C¹: the relative residual of one gradient fitted over 32 angles is 4.4×10⁻¹⁶, against 1.0 for
+  a control that imposes C⁰ alone. Dropping one of the three pole functions leaves a space still
+  C¹ but missing ỹ: the relative L² projection error on the pole cells goes from 5.4×10⁻¹⁵ to
+  6.0×10⁻².
+- **Approximation order.** Cubic on both axes, L² projection of a smooth function over the disk
+  from 8×16 to 64×128 cells: measured order 4.06 in the parameter measure and 4.06 in the disk
+  measure, against the expected p+1 = 4. The per-radial-cell RMS residual in the two pole cells
+  is smaller than the worst cell elsewhere by a factor of 250 at the finest level.
+- **Partition of unity.** Σ_k Ψ_k − 1 at most 1.6×10⁻¹⁵ over 176 points including the pole;
+  𝟙ᵀ𝕄𝟙 = 2π to 6.2×10⁻¹⁵ on the parameter square; with the Jacobian of the Grad–Shafranov
+  case C2 map as weight, 𝟙ᵀ𝕄_J𝟙 = 114.776991 against the independent value 114.777, a
+  relative error of 8.1×10⁻⁸.
+- **What the pole costs.** At 64×128 cubic cells, N = 8323: the sparse triple product that
+  assembles the mass matrix takes 41 ms and its Cholesky 16 ms, both paid once per space. One
+  mass solve — the figure a Newton iteration pays — is 0.74 ms, against 0.136 ms for the
+  `KroneckerMass` solve of the tensor-product space at the same mesh. So the pole costs a
+  factor of 5.4 on the solve and stays under a millisecond; it is not where the time of a
+  nonlinear flow goes.
+
+Requirements the constructor enforces: the radial axis a clamped `BSplineBasis` of degree ≥ 2,
+and the angular axis a `PeriodicBSplineBasis` with at least three functions. The radial axis
+needs no count of its own — a clamped basis has `ncells + p` functions and both are already
+bounded below, so at least one row always survives the pole triangle.
+
 ### Bug Fixes
 
 `[compat]` pins `Aqua` to exactly `0.8.16`. This is a **compat-only change**; no package code
@@ -29,6 +93,7 @@ after `aqua_tests.jl`.
 An exact bound rather than `0.8`, because `0.8.17` is the broken version and a range that
 excludes it has no other spelling. Lift it to `0.8` when the walk skips weak dependencies it
 cannot locate, and drop this pin with it.
+
 
 ## [0.2.0] — 2026-09-14
 

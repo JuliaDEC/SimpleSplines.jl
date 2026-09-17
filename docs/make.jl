@@ -28,7 +28,8 @@ makedocs(;
         "Theory" => [
             "B-Splines" => "theory/bsplines.md",
             "Boundary Conditions" => "theory/boundary.md",
-            "Tensor Products" => "theory/tensorproduct.md"
+            "Tensor Products" => "theory/tensorproduct.md",
+            "Polar Splines" => "theory/polar.md"
         ],
         "Usage" => [
             "Meshes" => "usage/meshes.md",

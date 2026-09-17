@@ -74,6 +74,11 @@ export quadrature_sample, quadrature_grid_size
 
 include("tensorproduct.jl")
 
+export PolarSplineBasis, PolarSplineQuadrature
+export pole, pole_triangle, pseudo_cartesian, parent_coefficients
+
+include("polar.jl")
+
 export Spline, SplineDerivative, coefficients, derivative
 
 include("spline.jl")
