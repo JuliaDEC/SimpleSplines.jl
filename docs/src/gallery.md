@@ -4,7 +4,7 @@ CurrentModule = SimpleSplines
 
 # Gallery
 
-Eight problems, solved and measured. Every number and figure on this page is produced when the
+Nine problems, solved and measured. Every number and figure on this page is produced when the
 manual is built, so nothing here is a claim about what the package should do.
 
 ```@example gal
@@ -404,7 +404,112 @@ op7 = mass_operator(TensorProductQuadrature(B7))
 size(op7), map(f -> nameof(typeof(f)), mass_factors(op7))
 ```
 
-## 8. Depositing particles onto a basis
+## 8. Poisson on a disc
+
+```math
+-\Delta u = f \ \text{ on } \ \{x_1^2 + x_2^2 < 1\} , \qquad u = 0 \text{ on } \partial\Omega ,
+```
+
+on a [`PolarSplineBasis`](@ref) over the parameter square ``(s,\theta)``. Three things are
+different from the box, and all three are the pole.
+
+**The assembly carries the map.** The polar [`stiffness_matrix`](@ref) is the gradient of the
+parameter square; the disc is the image of ``x_1 = s\cos\theta``, ``x_2 = s\sin\theta``, whose
+area element is ``s \, ds \, d\theta`` and whose gradient is ``\partial_s`` and
+``s^{-1}\partial_\theta``. So the operator is
+
+```math
+\mathbb{A}_{kl} = \int \Bigl( s \, \partial_s \Psi_k \, \partial_s \Psi_l
+                            + s^{-1} \partial_\theta \Psi_k \, \partial_\theta \Psi_l
+                     \Bigr) \, ds \, d\theta ,
+```
+
+two [`weighted_matrix`](@ref) calls. The ``s^{-1}`` is not a singularity of the integrand: the
+``\theta``-dependence of a pole function lives entirely on its second radial row, which
+vanishes at the pole, so ``\partial_\theta \Psi_k = O(s)``.
+
+**There is no Kronecker sum.** ``\mathbb{A}`` is assembled sparsely rather than written as
+``\mathbb{M}\otimes\mathbb{K} + \mathbb{K}\otimes\mathbb{M}``, for the same reason the polar
+mass matrix is not a [`KroneckerMass`](@ref): the index set is not a product.
+
+**The outer condition is imposed by hand.** A recombined radial axis has no pole, so
+[`Dirichlet`](@ref) is not available there. A clamped basis has exactly one function nonzero at
+``s = 1`` per angular index — the last radial row — and dropping those ``N_\theta`` indices is
+the condition. What the polar space *does* give for free is the pole, where the constraint is
+not a boundary condition but single-valuedness.
+
+```@example gal
+exact8(s, θ) = (1 - s^2) * (1 + s * cos(θ))       # u = (1 - r²)(1 + x₁)
+rhs8(s, θ) = 4 + 8 * s * cos(θ)                   # so that -Δu = 4 + 8x₁
+
+function poisson_disc(p, n)
+    radial = BSplineBasis(UniformMesh(n, 0 .. 1), p)
+    angular = PeriodicBSplineBasis(UniformMesh(2n, 0 .. 2π), p)
+    B = PolarSplineBasis(radial, angular)
+    q = PolarSplineQuadrature(B)
+
+    A = weighted_matrix(q, x -> x[1], (1, 0), (1, 0)) +
+        weighted_matrix(q, x -> 1 / x[1], (0, 1), (0, 1))
+
+    sq, θq = quadrature_nodes(q)                  # the flattening runs the radial axis fastest
+    load = basis_values(q, (0, 0)) *
+           (quadrature_weights(q) .* [s * rhs8(s, θ) for s in sq, θ in θq][:])
+
+    Ns, Nθ = nbasis(radial), nbasis(angular)
+    interior = setdiff(1:nbasis(B), [3 + j * (Ns - 2) for j in 1:Nθ])
+
+    û = zeros(nbasis(B))
+    û[interior] = Matrix(A[interior, interior]) \ load[interior]
+
+    (B, û, maximum(abs(evaluate(B, û, (s, θ)) - exact8(s, θ))
+                   for s in range(0, 1; length = 41), θ in range(0, 2π; length = 61)))
+end
+
+for p in 2:4
+    es = [poisson_disc(p, n)[3] for n in (4, 8, 16, 32)]
+    println("p = ", p, "   errors ", round.(es; sigdigits = 3),
+        "   rates ", round.([log2(es[i] / es[i + 1]) for i in 1:3]; digits = 2))
+end
+```
+
+Order ``p+1``, the same as on the box. The pole costs the Kronecker structure, not the
+approximation order.
+
+```@example gal
+B8, û8, err8 = poisson_disc(3, 16)
+angles8 = range(0, 2π; length = 65)[1:64]
+extrema(evaluate(B8, û8, (0.0, θ)) for θ in angles8),
+maximum(abs(evaluate(B8, û8, (1.0, θ))) for θ in angles8)
+```
+
+The first pair is the value at the pole read from 64 different angles: its two ends agree to a
+few units in the last place, not an ``O(1)`` range as it is for a tensor-product spline (see
+[Polar Splines](@ref theory-polar)). The second is the Dirichlet condition, exact because the
+dropped functions are the only ones that could violate it.
+
+```@example gal
+ss = range(0, 1; length = 81)
+θs = range(0, 2π; length = 161)
+X8 = [s * cos(θ) for s in ss, θ in θs]
+Y8 = [s * sin(θ) for s in ss, θ in θs]
+Z8 = [evaluate(B8, û8, (s, θ)) for s in ss, θ in θs]
+
+fig = Figure(size = (780, 320))
+ax1 = Axis3(fig[1, 1]; xlabel = "x₁", ylabel = "x₂", zlabel = "u",
+    title = "-Δu = 4 + 8x₁,  p = 3, n = 16")
+surface!(ax1, X8, Y8, Z8)
+ax2 = Axis(fig[1, 2]; xlabel = "x₁", ylabel = "x₂", aspect = 1, title = "error")
+he = surface!(ax2, X8, Y8, Z8 .- [exact8(s, θ) for s in ss, θ in θs];
+    colormap = :balance, shading = NoShading)
+Colorbar(fig[1, 3], he)
+fig
+```
+
+The error is banded in ``\theta``, one oscillation per angular cell, and it is *not*
+concentrated at the pole — the pole cells are no worse than the rest. That is the claim
+`scripts/polar_approximation_order.jl` measures, seen here on a solve rather than a projection.
+
+## 9. Depositing particles onto a basis
 
 The reverse of evaluation: given weights at scattered positions, accumulate them into
 coefficients. This is the loop [`evaluate_all!`](@ref) and [`findcell`](@ref) exist for, and it

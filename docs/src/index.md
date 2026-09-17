@@ -102,7 +102,7 @@ picture with a tuple in each box.
     Conditions](@ref usage-boundary), [Assembly](@ref usage-assembly), [Tensor Products](@ref
     usage-tensorproduct) and [Splines](@ref usage-splines) give the constructors, the
     accessors and the traps.
-  - **[Gallery](@ref)** — eight solved problems with their measured errors.
+  - **[Gallery](@ref)** — nine solved problems with their measured errors.
   - **[Library](@ref)** — every exported name.
 
 ## Related packages

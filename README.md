@@ -65,7 +65,7 @@ u(0.5), u(0.5, 1), u(0.0)        # value, first derivative, and the imposed u(0)
 
 The [manual](https://JuliaDEC.github.io/SimpleSplines.jl/dev/) has a tutorial, the spline
 theory the package rests on, a usage page per object with the constructors and the traps, a
-gallery of eight solved problems with their measured errors, and the full API.
+gallery of nine solved problems with their measured errors, and the full API.
 
 ## Development
 
