@@ -452,14 +452,14 @@ function poisson_disc(p, n)
         weighted_matrix(q, x -> 1 / x[1], (0, 1), (0, 1))
 
     sq, θq = quadrature_nodes(q)                  # the flattening runs the radial axis fastest
-    b = basis_values(q, (0, 0)) *
-        (quadrature_weights(q) .* [s * rhs8(s, θ) for s in sq, θ in θq][:])
+    load = basis_values(q, (0, 0)) *
+           (quadrature_weights(q) .* [s * rhs8(s, θ) for s in sq, θ in θq][:])
 
     Ns, Nθ = nbasis(radial), nbasis(angular)
     interior = setdiff(1:nbasis(B), [3 + j * (Ns - 2) for j in 1:Nθ])
 
     û = zeros(nbasis(B))
-    û[interior] = Matrix(A[interior, interior]) \ b[interior]
+    û[interior] = Matrix(A[interior, interior]) \ load[interior]
 
     (B, û, maximum(abs(evaluate(B, û, (s, θ)) - exact8(s, θ))
                    for s in range(0, 1; length = 41), θ in range(0, 2π; length = 61)))
@@ -482,8 +482,8 @@ extrema(evaluate(B8, û8, (0.0, θ)) for θ in angles8),
 maximum(abs(evaluate(B8, û8, (1.0, θ))) for θ in angles8)
 ```
 
-The first pair is the value at the pole read from 64 different angles: it is one number to the
-last bit, not an ``O(1)`` range as it is for a tensor-product spline (see
+The first pair is the value at the pole read from 64 different angles: its two ends agree to a
+few units in the last place, not an ``O(1)`` range as it is for a tensor-product spline (see
 [Polar Splines](@ref theory-polar)). The second is the Dirichlet condition, exact because the
 dropped functions are the only ones that could violate it.
 
@@ -505,8 +505,8 @@ Colorbar(fig[1, 3], he)
 fig
 ```
 
-The error is banded in ``\theta``, one lobe per angular cell, and it is *not* concentrated at
-the pole — the pole cells are no worse than the rest. That is the claim
+The error is banded in ``\theta``, one oscillation per angular cell, and it is *not*
+concentrated at the pole — the pole cells are no worse than the rest. That is the claim
 `scripts/polar_approximation_order.jl` measures, seen here on a solve rather than a projection.
 
 ## 9. Depositing particles onto a basis

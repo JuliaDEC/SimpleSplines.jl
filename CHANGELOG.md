@@ -119,13 +119,13 @@ Measured by the build, over `n = 4, 8, 16, 32` radial cells with `2n` angular ce
 - **Order.** p = 2: rates 3.06, 3.06, 2.99, down to an error of 3.2×10⁻⁶. p = 3: rates 4.15,
   4.04, 4.01, down to 5.0×10⁻⁸. p = 4: rates 5.23, 5.44, 4.74, down to 6.6×10⁻¹⁰. So `p+1`, the
   same as on the box — the pole costs the Kronecker structure, not the approximation order.
-- **Single-valuedness.** The value at the pole read from 64 angles is one number to the last bit,
-  against the `O(1)` range a tensor-product spline gives at the same place.
+- **Single-valuedness.** The value at the pole read from 64 angles spans a few units in the last
+  place, against the `O(1)` range a tensor-product spline gives at the same place.
 - **The boundary condition.** The residual on the outer boundary is exactly zero, because the
   dropped functions are the only ones that could violate it.
-- **Where the error is.** The new figure shows it banded in θ, one lobe per angular cell, and
-  *not* concentrated at the pole — the claim `scripts/polar_approximation_order.jl` measures for
-  a projection, now seen on a solve.
+- **Where the error is.** The new figure shows it banded in θ, one oscillation per angular cell,
+  and *not* concentrated at the pole — the claim `scripts/polar_approximation_order.jl` measures
+  for a projection, now seen on a solve.
 
 ## [0.2.0] — 2026-09-14
 
