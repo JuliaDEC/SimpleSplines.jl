@@ -94,6 +94,39 @@ An exact bound rather than `0.8`, because `0.8.17` is the broken version and a r
 excludes it has no other spelling. Lift it to `0.8` when the walk skips weak dependencies it
 cannot locate, and drop this pin with it.
 
+### Documentation
+
+The gallery gains a ninth problem, **Poisson on a disc**, placed after Poisson on a box:
+`-Δu = f` on the unit disc with `u = 0` on the boundary, on a `PolarSplineBasis`. It is the
+manual's first worked **mapped** assembly, which is the thing a reader who has just met the polar
+space still does not know how to write.
+
+Two points it exists to make. The polar `stiffness_matrix` is the gradient of the *parameter
+square*, so it is not the operator this problem needs; the metric of the map goes into the weight,
+and the disc's operator is two `weighted_matrix` calls with weights `s` and `1/s` — the area
+element `s ds dθ` and the gradient `(∂_s, s⁻¹∂_θ)`. The `1/s` is not a singularity of the
+integrand, because a pole function's θ-derivative vanishes like `s`. And the **outer** boundary
+condition has to be imposed by hand: a recombined radial axis has no pole, so `Dirichlet()` is
+not available on that axis, and the `Nθ` functions nonzero at `s = 1` are dropped from the index
+set instead. That is the contrast with the two earlier Poisson problems, where the recombined
+basis carries the condition and there is no such step.
+
+The manufactured solution `u = (1 − r²)(1 + x₁)` has a nonzero value *and* a nonzero gradient at
+the pole, so all three pole functions are exercised rather than only the constant.
+
+Measured by the build, over `n = 4, 8, 16, 32` radial cells with `2n` angular cells:
+
+- **Order.** p = 2: rates 3.06, 3.06, 2.99, down to an error of 3.2×10⁻⁶. p = 3: rates 4.15,
+  4.04, 4.01, down to 5.0×10⁻⁸. p = 4: rates 5.23, 5.44, 4.74, down to 6.6×10⁻¹⁰. So `p+1`, the
+  same as on the box — the pole costs the Kronecker structure, not the approximation order.
+- **Single-valuedness.** The value at the pole read from 64 angles is one number to the last bit,
+  against the `O(1)` range a tensor-product spline gives at the same place.
+- **The boundary condition.** The residual on the outer boundary is exactly zero, because the
+  dropped functions are the only ones that could violate it.
+- **Where the error is.** The new figure shows it banded in θ, one lobe per angular cell, and
+  *not* concentrated at the pole — the claim `scripts/polar_approximation_order.jl` measures for
+  a projection, now seen on a solve.
+
 ## [0.2.0] — 2026-09-14
 
 ### New Features
