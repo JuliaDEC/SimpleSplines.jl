@@ -94,7 +94,6 @@ An exact bound rather than `0.8`, because `0.8.17` is the broken version and a r
 excludes it has no other spelling. Lift it to `0.8` when the walk skips weak dependencies it
 cannot locate, and drop this pin with it.
 
-
 ## [0.2.0] — 2026-09-14
 
 ### New Features
