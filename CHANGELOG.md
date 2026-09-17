@@ -5,6 +5,31 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — targeting 0.3.0
+
+### Bug Fixes
+
+`[compat]` pins `Aqua` to exactly `0.8.16`. This is a **compat-only change**; no package code
+is touched and nothing a caller sees changes.
+
+`Aqua v0.8.17`, released 2026-09-17, turns the `persistent_tasks` check red for this package
+on every CI platform and Julia version. Its
+[#394](https://github.com/JuliaTesting/Aqua.jl/pull/394) writes the precompile wrapper's
+manifest from `Base.locate_package` instead of `Pkg.develop`, and the `manifest_entries` walk
+it added iterates each project's `deps` **and `weakdeps`**, raising
+`Unable to locate <name>, a dependency of <project>` when one cannot be located. A weak
+dependency that is not installed is the normal case: here `ChainRulesCore` behind
+`AbstractFFTs`, which this package reaches through FFTW. So the check fails on a healthy
+environment.
+
+`Aqua.test_all` adds no enclosing testset and stops at its first failing check, so the error
+took the rest of `runtests.jl` with it — a suite that appears to have run had verified nothing
+after `aqua_tests.jl`.
+
+An exact bound rather than `0.8`, because `0.8.17` is the broken version and a range that
+excludes it has no other spelling. Lift it to `0.8` when the walk skips weak dependencies it
+cannot locate, and drop this pin with it.
+
 ## [0.2.0] — 2026-09-14
 
 ### New Features
