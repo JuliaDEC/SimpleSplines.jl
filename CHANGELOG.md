@@ -60,14 +60,16 @@ Six new exports: `PolarSplineBasis`, `PolarSplineQuadrature`, `pole`, `pole_tria
   case C2 map as weight, 𝟙ᵀ𝕄_J𝟙 = 114.776991 against the independent value 114.777, a
   relative error of 8.1×10⁻⁸.
 - **What the pole costs.** At 64×128 cubic cells, N = 8323: the sparse triple product that
-  assembles the mass matrix takes 43 ms and its Cholesky 115 ms, both paid once per space. One
-  mass solve — the figure a Newton iteration pays — is 0.77 ms, against 0.137 ms for the
+  assembles the mass matrix takes 41 ms and its Cholesky 16 ms, both paid once per space. One
+  mass solve — the figure a Newton iteration pays — is 0.74 ms, against 0.136 ms for the
   `KroneckerMass` solve of the tensor-product space at the same mesh. So the pole costs a
-  factor of 5.6 on the solve and stays under a millisecond; it is not where the time of a
+  factor of 5.4 on the solve and stays under a millisecond; it is not where the time of a
   nonlinear flow goes.
 
-Requirements the constructor enforces: the radial axis a clamped `BSplineBasis` of degree ≥ 2
-with ≥ 3 functions; the angular axis a `PeriodicBSplineBasis` with ≥ 3 functions.
+Requirements the constructor enforces: the radial axis a clamped `BSplineBasis` of degree ≥ 2,
+and the angular axis a `PeriodicBSplineBasis` with at least three functions. The radial axis
+needs no count of its own — a clamped basis has `ncells + p` functions and both are already
+bounded below, so at least one row always survives the pole triangle.
 
 ### Bug Fixes
 

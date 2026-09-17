@@ -47,6 +47,13 @@ using Test
         @test_throws ArgumentError PolarSplineBasis(radial, radial)         # not periodic
         @test_throws ArgumentError PolarSplineBasis(
             radial, PeriodicBSplineBasis(UniformMesh(2, 0 .. 2π), 3))       # Nθ < 3
+
+        # There is no radial counterpart to the last one, and there is no guard for it either:
+        # a clamped basis has `ncells + p` functions and both are bounded below already, so at
+        # least one radial row always survives the pole triangle.
+        @test minimum(nbasis(BSplineBasis(UniformMesh(n, 0 .. 1), p))
+        for p in 2:6, n in 1:6) ==
+              3
     end
 
     @testset "$(rpad("the premise: only the first two rows reach the pole",76))" begin
@@ -225,7 +232,9 @@ using Test
         end
 
         M = mass_matrix(q)
-        @test issymmetric(Symmetric(M))
+        # Exactly, not to round-off: the assembly symmetrises the triple product, as the
+        # one-dimensional one does, so a caller may hand `M` to anything that demands it.
+        @test issymmetric(M)
         @test isposdef(Symmetric(Matrix(M)))
         @test M ≈ mixed_matrix(q, (0, 0), (0, 0))
         @test M ≈
@@ -247,7 +256,9 @@ using Test
         @test_throws DimensionMismatch weighted_matrix(q, w[1:(end - 1)], (0, 0), (0, 0))
 
         K = stiffness_matrix(q)
-        @test issymmetric(Symmetric(K))
+        # The stiffness matrix is a sum of two `mixed_matrix` products and is not symmetrised,
+        # so this is symmetry to round-off rather than exact symmetry.
+        @test norm(K - K', Inf) < 1e-14 * norm(K, Inf)
         @test norm(K * 𝟙, Inf) < 1e-10                         # the constants are its kernel
         @test K ≈ mixed_matrix(q, (1, 0), (1, 0)) + mixed_matrix(q, (0, 1), (0, 1))
     end

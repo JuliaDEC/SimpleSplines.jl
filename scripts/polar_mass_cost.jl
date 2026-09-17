@@ -6,10 +6,9 @@
 # is a sum over the whole angular axis, so `KroneckerMass` does not apply and the polar mass
 # matrix is assembled and factorised.
 #
-# The task file this work comes from says that is "a cost to measure rather than assume". This
-# measures it, at the sizes a Grad-Shafranov relaxation would use, and separates the two things
-# that are easy to conflate: the one-off factorisation, paid once when the space is built, and
-# the per-solve cost, paid at every Newton iteration.
+# This measures that trade at the sizes a nonlinear flow on a mapped disk would use, and
+# separates the two things that are easy to conflate: the one-off assembly and factorisation,
+# paid once when the space is built, and the per-solve cost, paid at every Newton iteration.
 #
 # Timings need a cold process, so this is a script and not something to run in a warm session.
 # Each figure is the best of several runs after one warm-up call, which is the usual guard

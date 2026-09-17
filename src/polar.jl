@@ -120,9 +120,10 @@ every assembly is the parent's conjugated by that matrix — exactly as for a
 
 # Requirements
 
-The radial basis must be a clamped [`BSplineBasis`](@ref) of degree at least two with at least
-three functions; degree one has no ``C^1`` to impose, and a recombined or periodic radial axis
-has no pole. The angular basis must be a [`PeriodicBSplineBasis`](@ref) with at least three
+The radial basis must be a clamped [`BSplineBasis`](@ref) of degree at least two; degree one
+has no ``C^1`` to impose, and a recombined or periodic radial axis has no pole. That already
+leaves at least one row surviving the pole triangle, since a clamped basis has ``n + p``
+functions. The angular basis must be a [`PeriodicBSplineBasis`](@ref) with at least three
 functions, or ``C``, ``S`` and the constants are not independent and the triangle is
 degenerate.
 """
@@ -154,9 +155,11 @@ struct PolarSplineBasis{T, PT <: TensorProductBasis{T, 2}}
 
         Ns = nbasis(radial)
         Nθ = nbasis(angular)
-        Ns ≥ 3 || throw(ArgumentError(
-            "the radial basis has $(Ns) functions, and the pole triangle replaces the first " *
-            "two; at least one row must survive it"))
+
+        # The radial axis needs no count of its own. A clamped basis has `ncells + p`
+        # functions, a mesh has at least one cell, and `p ≥ 2` is checked above, so `Ns ≥ 3`
+        # always and at least one row survives the pole triangle. The angular axis is not
+        # implied by anything and is checked.
         Nθ ≥ 3 || throw(ArgumentError(
             "the angular basis has $(Nθ) functions, too few for the pole triangle: the " *
             "constants, C and S must be independent in it, and on fewer than three " *
@@ -441,8 +444,13 @@ function evaluate_all(B::PolarSplineBasis{T}, x, d::NTuple{2, Int} = (0, 0)) whe
     i₀, bs = evaluate_all(radial, x[1], d[1])
     j₀, bθ = evaluate_all(angular, x[2], d[2])
 
+    # The block holds at most the three pole functions and the parent's local block, so one
+    # allocation of that size each replaces the handful `push!` would grow through.
+    nmax = 3 + length(bs) * length(bθ)
     idx = Int[]
     vals = R[]
+    sizehint!(idx, nmax)
+    sizehint!(vals, nmax)
 
     # The pole functions, if the radial block reaches either of the first two rows. Ψ_k is
     # N_1(s)/3 + N_2(s) * Σ_j λ_kj M_j(θ), and both angular sums are taken over the block
@@ -544,7 +552,8 @@ struct PolarSplineQuadrature{T, BT <: PolarSplineBasis{T},
 
         Φ₀ = _polar_table(B, parent, (0, 0))
         Φ[(0, 0)] = Φ₀
-        M = SparseMatrixCSC{T, Int}(Φ₀ * Diagonal(w) * Φ₀')
+        M = Φ₀ * Diagonal(w) * Φ₀'
+        M = SparseMatrixCSC{T, Int}((M + M') / 2)   # symmetric by construction; enforce it
         mass = FactorizedMass(M)
         integrals = Φ₀ * w
 
