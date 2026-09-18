@@ -98,8 +98,9 @@ space is ``C^1`` is therefore built from them,
 
 which is what [`pseudo_cartesian`](@ref) returns. In it the radial derivative above is exactly
 the linear function ``\alpha \tilde{x} + \beta \tilde{y}``, so the ``C^1`` property is exact
-rather than approximate — and the space contains ``1``, ``\tilde{x}`` and ``\tilde{y}``
-to round-off:
+rather than approximate. On a free space — the one built below — the space also contains
+``1``, ``\tilde{x}`` and ``\tilde{y}`` to round-off; a homogeneous-Dirichlet rim removes them
+along with the constant, and [`polynomial_reproduction`](@ref) says which regime a basis is in:
 
 ```@example polar
 Ns, Nθ = nbasis(radial), nbasis(angular)

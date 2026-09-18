@@ -168,6 +168,7 @@ also leave the first two radial functions alone, which needs ``m + 3`` functions
 parent it recombines; only a condition of order two or more can fail that. At least one
 radial row must survive the pole triangle, which a clamped basis gives for free and a rim
 condition can take away.
+
 The angular basis must be a [`PeriodicBSplineBasis`](@ref) with at least three functions, or
 ``C``, ``S`` and the constants are not independent and the triangle is degenerate.
 
@@ -354,9 +355,11 @@ the angular splines whose coefficients are the cosine and sine of the Greville a
 ``C`` and ``S`` are splines rather than the trigonometric functions themselves, and that is
 the point: ``\cos\theta`` is not in the angular spline space, so a chart built from it would
 make the ``C^1`` property hold only up to the approximation error of that space. Built from
-``C`` and ``S`` it holds exactly, and the space contains ``1``, ``\tilde{x}`` and
-``\tilde{y}`` to round-off. A geometry map that is itself represented in this space — the
-isogeometric case — therefore carries the smoothness to the physical domain.
+``C`` and ``S`` it holds exactly. On a free space the space also contains ``1``,
+``\tilde{x}`` and ``\tilde{y}`` to round-off; a homogeneous-Dirichlet rim removes them along
+with the constant ([`polynomial_reproduction`](@ref) says which regime a basis is in). A
+geometry map that is itself represented in this space — the isogeometric case — therefore
+carries the smoothness to the physical domain.
 
 The price is that the unit circle of this chart is the spline through the Greville values of
 the cosine and the sine, which sits a little inside the true one — some 2.5% at 16 angular
@@ -792,8 +795,9 @@ mass_factorization(q::PolarSplineQuadrature) = q.mass
     stiffness_matrix(q::PolarSplineQuadrature)
 
 The matrix ``\int \nabla \Psi_k \cdot \nabla \Psi_l \, ds \, d\theta``, the sum over the two
-axes of the parameter square, symmetric positive semi-definite with the constants in its
-kernel.
+axes of the parameter square, symmetric and positive semi-definite with the constants in its
+kernel on a free space; a homogeneous-Dirichlet rim removes the constant from the space and
+the matrix is positive definite instead.
 
 This is the gradient of the parameter square, not of the mapped domain: the metric of the map
 belongs in the weight, as it does for [`mixed_matrix`](@ref).
@@ -807,9 +811,10 @@ end
 
 The vector ``\int \Psi_k \, ds \, d\theta``.
 
-Equal to ``\mathbb{M} \mathbf{1}`` because the polar basis is a partition of unity — the pole
-triangle included, which is what the choice of vertex radius buys. Assembled once and
-returned by reference; do not mutate the result.
+On a free space, equal to ``\mathbb{M} \mathbf{1}`` because the polar basis is a partition of
+unity there — the pole triangle included, which is what the choice of vertex radius buys. A
+homogeneous-Dirichlet rim breaks the partition of unity (see [`polynomial_reproduction`](@ref)),
+so the two disagree there. Assembled once and returned by reference; do not mutate the result.
 """
 basis_integrals(q::PolarSplineQuadrature) = q.integrals
 
