@@ -81,3 +81,34 @@ assemble   = Φ₀ diag(w) Φ₀ᵀ, the sparse triple product, paid once per sp
 factorise  = the sparse Cholesky of it, paid once per space
 solve      = one mass solve, the figure a Newton iteration pays
 solve kron = the same on the tensor-product space at the same mesh, for scale""")
+println()
+
+## ---------------------------------------------------------------------------------------
+## A homogeneous-Dirichlet rim, at the finest level
+## ---------------------------------------------------------------------------------------
+
+# A rim condition removes N_θ functions and leaves the pole rows alone, so it should cost a
+# little less on every line and change nothing structural. Measured rather than argued,
+# because a sparse factorisation's cost is not a function of the matrix size alone — and at
+# one level only, since the point is the comparison and not a second scaling study.
+
+let (ns, nθ) = LEVELS[end]
+    radial = BSplineBasis(UniformMesh(ns, 0 .. 1), P)
+    angular = PeriodicBSplineBasis(UniformMesh(nθ, 0 .. 2π), P)
+    q = PolarSplineQuadrature(PolarSplineBasis(
+        RecombinedBSplineBasis(radial, Free(), Dirichlet()), angular))
+
+    Φ = basis_values(q, (0, 0))
+    w = quadrature_weights(q)
+    M = SparseMatrixCSC{Float64, Int}(Φ * Diagonal(w) * Φ')
+
+    x = randn(nbasis(q))
+    y = similar(x)
+    op = mass_operator(q)
+
+    @printf("%4d × %-4d %8d %8s | %8.2f ms %8.2f ms %11d | %8.3f ms %8s   (rim)\n",
+        ns, nθ, nbasis(q), "—",
+        1e3best(() -> SparseMatrixCSC{Float64, Int}(Φ * Diagonal(w) * Φ'), 5),
+        1e3best(() -> cholesky(Symmetric(M)), 5), nnz(M),
+        1e3best(() -> mass_solve!(y, op, x)), "—")
+end

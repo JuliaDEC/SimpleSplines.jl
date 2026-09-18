@@ -71,6 +71,60 @@ and the angular axis a `PeriodicBSplineBasis` with at least three functions. The
 needs no count of its own — a clamped basis has `ncells + p` functions and both are already
 bounded below, so at least one row always survives the pole triangle.
 
+---
+
+A polar spline space can now carry a boundary condition on its **rim**, the outer radial end.
+`PolarSplineBasis` accepts a `RecombinedBSplineBasis` as its radial axis, provided that basis
+is unconstrained at the pole end:
+
+```julia
+radial = RecombinedBSplineBasis(BSplineBasis(UniformMesh(8, 0 .. 1), 3), Free(), Dirichlet())
+B = PolarSplineBasis(radial, PeriodicBSplineBasis(UniformMesh(16, 0 .. 2π), 3))
+```
+
+This is what a Dirichlet problem on a mapped disk needs, and without it such a problem could
+only be posed on a space that still contains the constants. A homogeneous-Dirichlet rim removes
+`Nθ` functions and, with them, the constant — so `Σ_k Ψ_k ≡ 1` no longer holds, which is the
+point rather than a defect. The pole is not a boundary condition and still is not one; the rim
+is, and it is imposed where every other boundary condition is, by recombining the radial axis.
+
+**Nothing about the pole changes, and not merely to round-off.** The pole triangle is built
+from the first two radial functions and their derivatives at `s = a`, and a right-recombined
+basis's first two functions are the clamped parent's, byte for byte. So the two recombinations
+compose with nothing to reconcile, and any rim condition — `Neumann`, `Robin` — works the same
+way. Recombining the *pole* end is still rejected, and the error message now says which end it
+means.
+
+Two guards come with it. One was previously unreachable and is restored: a rim condition removes
+a radial function, so `ncells = 1` at degree 2 leaves only the two rows the pole triangle
+replaces. The other is new and is what makes "the first two radial functions are the clamped
+parent's" true rather than merely usually true — a rim condition of order `m` recombines the
+parent's last `m+1` functions, so a parent with fewer than `m+3` of them has its rim block reach
+function two, and the C¹ constraint is then built on the wrong rows while C⁰ still holds.
+Measured before the guard, on a `Natural` rim at 2 cells of degree 2: the C¹ gradient residual
+at the pole was 0.635, against 3.6×10⁻¹⁶ for every valid basis. Only a condition of order ≥ 2 can
+reach past the first guard, which is why `Dirichlet` and `Neumann` rims cannot hit it.
+
+**Measurements**, in the same four scripts:
+
+- **The pole is untouched.** At 12×24 cubic cells the C⁰ spread over 32 angles is 2.2×10⁻¹⁶ for
+  a random spline and 5.0×10⁻¹⁶ for the worst basis function, and the C¹ gradient residual is
+  2.9×10⁻¹⁶ — the free space's own figures. The two radial rows the triangle reads and the
+  N₂′(a) it rests on differ by exactly zero.
+- **The constant has left.** Its relative L² error is 8.9×10⁻² on the rim space against
+  2.4×10⁻¹⁵ on the free one, and every basis function is exactly zero at `s = 1`.
+- **The partition of unity fails only at the rim.** `|Σ_k Ψ_k − 1|` is 1.6×10⁻¹⁵ over the
+  points with `s ≤ 1 − h` and 1.0 overall; at `s = 1` the sum is exactly zero. The pole
+  triangle's own identity and its non-negativity are unchanged. `𝟙ᵀ𝕄𝟙` is 6.189686 against
+  2π = 6.283185, short by the row the rim removes.
+- **The approximation order is unchanged**, on a target the space can represent: cubic, L²
+  projection of a smooth function vanishing on the disk's boundary, measured order 4.045 at
+  64×128 against the expected 4, with the pole cells' error still an order below the worst cell
+  elsewhere. The free space's error on the same target agrees to five digits, so the rim costs
+  no approximation power.
+- **It costs slightly less.** At 64×128, N = 8195 against 8323: assembly 39.5 ms, Cholesky
+  15.0 ms, one mass solve 0.708 ms, against 41.6, 16.4 and 0.743 ms for the free space.
+
 ### Bug Fixes
 
 `[compat]` pins `Aqua` to exactly `0.8.16`. This is a **compat-only change**; no package code

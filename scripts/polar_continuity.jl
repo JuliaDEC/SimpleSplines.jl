@@ -24,6 +24,14 @@
 #        cells jumps from round-off to a few per cent. That is what the third of the three
 #        functions earns, and this is where it is measured.
 #
+# A fourth section measures the same two properties on a space with a homogeneous-Dirichlet
+# **rim**, where the expected answer is that nothing changes. A rim condition recombines the
+# outer end of the radial axis and the pole triangle reads only the first two functions of the
+# inner end, so the two compose with nothing to reconcile. What the rim does change is the
+# partition of unity, which `polar_partition_of_unity.jl` measures; here it appears only as the
+# positive control that the constant has actually left the space, without which "C⁰ and C¹ still
+# hold" would be consistent with the rim condition having done nothing at all.
+#
 # Run: julia --project=. --startup-file=no scripts/polar_continuity.jl
 
 using LinearAlgebra
@@ -249,8 +257,74 @@ println("  polar passes: ", span_pass, "        control fails as it must: ",
 println()
 
 ## ---------------------------------------------------------------------------------------
+## A homogeneous-Dirichlet rim leaves the pole alone
+## ---------------------------------------------------------------------------------------
+
+# The expected answer here is "the same numbers as above". That is the claim: a rim condition
+# is a boundary condition on the outer end of the radial axis, the pole triangle is built from
+# the first two functions of the inner end, and a right-recombined basis's first two functions
+# are the clamped parent's unchanged. So C⁰ and C¹ at the pole are not merely preserved to
+# round-off, they are preserved because nothing they are computed from has moved.
+#
+# The positive control is the constant. Without it this section would pass equally well against
+# a rim condition that did nothing, which is the failure mode of a check that only reports that
+# something is still true.
+
+rim = RecombinedBSplineBasis(radial, Free(), Dirichlet())
+D = PolarSplineBasis(rim, angular)
+
+û_rim = randn(nbasis(D))
+
+s0_rim = spread([evaluate(D, û_rim, (0.0, θ)) for θ in ANGLES])
+s0_rim_each = maximum(k -> spread([evaluate(D, k, (0.0, θ)) for θ in ANGLES]), 1:nbasis(D))
+r_rim = last(gradient_residual(θ -> evaluate(D, û_rim, (0.0, θ), (1, 0))))
+
+# The two functions the triangle is read from, and the number it rests on.
+row_shift = maximum(abs(evaluate(rim, k, x) - evaluate(radial, k, x))
+for k in 1:2, x in range(0, 1; length = 81))
+dN2_shift = abs(evaluate(rim, 2, 0.0, 1) - evaluate(radial, 2, 0.0, 1))
+
+# CONTROL: the constant. It is in the free space to round-off and must leave the rim space.
+qr = PolarSplineQuadrature(D)
+Φr = basis_values(qr, (0, 0))
+wr = quadrature_weights(qr)
+one_rim = let û = l2_projection(qr, x -> 1.0)
+    r = Φr' * û .- 1
+    sqrt(abs(sum(r .^ 2 .* wr))) / sqrt(abs(sum(wr)))
+end
+one_free = let û = l2_projection(q, x -> 1.0)
+    r = Φ' * û .- 1
+    sqrt(abs(sum(r .^ 2 .* w))) / sqrt(abs(sum(w)))
+end
+
+# And the rim itself: no function in the space has a value at s = 1.
+rim_value = maximum(abs(evaluate(D, k, (1.0, θ))) for k in 1:nbasis(D), θ in ANGLES)
+
+println("a homogeneous-Dirichlet rim leaves the pole alone")
+println("  functions              ", nbasis(B), " free → ", nbasis(D), " with the rim, a ",
+    "difference of ", nbasis(B) - nbasis(D), " = Nθ")
+@printf("  rim,     random spline          C⁰ spread = %.3e   (free: %.3e)\n",
+    s0_rim, s0_polar)
+@printf("  rim,     worst basis function   C⁰ spread = %.3e   (free: %.3e)\n",
+    s0_rim_each, s0_each)
+@printf("  rim,     random spline          C¹ resid  = %.3e   (free: %.3e)\n", r_rim,
+    r_polar)
+@printf("  the two rows the triangle reads          shift = %.3e   N₂'(a) shift = %.3e\n",
+    row_shift, dN2_shift)
+@printf("  max |Ψ_k(1, θ)|                                = %.3e\n", rim_value)
+@printf("  CONTROL  relative L² error of 1    rim = %.3e   free = %.3e   (rim must be O(1))\n",
+    one_rim, one_free)
+rim_pass = s0_rim < 1e-14 && s0_rim_each < 1e-14 && r_rim < 1e-12 &&
+           row_shift == 0 && dN2_shift == 0 && rim_value == 0 &&
+           nbasis(B) - nbasis(D) == Nθ
+rim_control_fails = one_rim > 1e-2 && one_free < 1e-12
+println("  rim passes: ", rim_pass, "        control fails as it must: ", rim_control_fails)
+println()
+
+## ---------------------------------------------------------------------------------------
 
 allpass = c0_pass && c0_control_fails && c1_pass && c1_control_fails &&
-          linear_pass && span_pass && span_control_fails
+          linear_pass && span_pass && span_control_fails &&
+          rim_pass && rim_control_fails
 println(allpass ? "ALL CHECKS PASS" : "SOME CHECK FAILED")
 exit(allpass ? 0 : 1)
