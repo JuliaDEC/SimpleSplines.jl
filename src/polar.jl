@@ -120,13 +120,53 @@ every assembly is the parent's conjugated by that matrix — exactly as for a
 
 # Requirements
 
-The radial basis must be a clamped [`BSplineBasis`](@ref) of degree at least two; degree one
-has no ``C^1`` to impose, and a recombined or periodic radial axis has no pole. That already
-leaves at least one row surviving the pole triangle, since a clamped basis has ``n + p``
-functions. The angular basis must be a [`PeriodicBSplineBasis`](@ref) with at least three
-functions, or ``C``, ``S`` and the constants are not independent and the triangle is
-degenerate.
+The radial basis must be **clamped and unconstrained at the pole end**, of degree at least
+two; degree one has no ``C^1`` to impose, and a periodic radial axis has no pole. A plain
+[`BSplineBasis`](@ref) qualifies, and so does a [`RecombinedBSplineBasis`](@ref) carrying
+[`Free`](@ref) at the pole end — see *The rim* below. At least one radial row must survive
+the pole triangle, which a clamped basis gives for free and a rim condition can take away.
+The angular basis must be a [`PeriodicBSplineBasis`](@ref) with at least three functions, or
+``C``, ``S`` and the constants are not independent and the triangle is degenerate.
+
+# The rim
+
+The pole is not a boundary condition — it couples the two axes, which is why this type exists
+beside [`TensorProductBasis`](@ref) rather than as a fourth `BSplineBasis(mesh, p, bc)`
+method. The **rim**, the outer end ``s = b``, is an ordinary boundary condition on the radial
+axis and is imposed where every other one is, by recombining that axis:
+
+```julia
+radial = RecombinedBSplineBasis(BSplineBasis(UniformMesh(8, 0 .. 1), 3), Free(), Dirichlet())
+B = PolarSplineBasis(radial, PeriodicBSplineBasis(UniformMesh(16, 0 .. 2π), 3))
+```
+
+The two compose with nothing to reconcile. A rim condition changes only rows the pole
+triangle does not read: the triangle is built from the first two functions and their
+derivatives at ``s = a``, and a right-recombined basis's first two functions **are** the
+clamped parent's, unchanged. So ``R`` is built exactly as before, on the smaller ``N_s``.
+
+What this costs is the **partition of unity**: a homogeneous-Dirichlet rim removes the
+constant from the space by construction, so ``\sum_k \Psi_k \equiv 1`` becomes false — near
+the rim, and only there. The ``C^0`` and ``C^1`` properties at the pole are untouched, since
+no function the triangle is built from has changed. [`polynomial_reproduction`](@ref) of the
+radial axis says which of the two regimes a basis is in.
 """
+# The pole end needs two things and neither is "the basis is a `BSplineBasis`": the knot
+# vector must be clamped, so that exactly two functions reach the pole, and that end must be
+# unrecombined, so that those two functions are the ones the triangle is built from. A basis
+# recombined at the *outer* end only satisfies both — its first two functions are the clamped
+# parent's, unchanged — which is what lets a rim condition compose with the pole triangle
+# instead of having to rebuild it.
+_pole_end_is_clamped(radial) = radial isa BSplineBasis
+function _pole_end_is_clamped(radial::RecombinedBSplineBasis)
+    boundary(radial)[1] isa Free
+end
+
+_pole_end_description(radial) = "a $(nameof(typeof(radial)))"
+function _pole_end_description(radial::RecombinedBSplineBasis)
+    "a RecombinedBSplineBasis carrying $(boundary(radial)[1]) at the pole end"
+end
+
 struct PolarSplineBasis{T, PT <: TensorProductBasis{T, 2}}
     parent::PT
     λ::Matrix{T}
@@ -138,11 +178,14 @@ struct PolarSplineBasis{T, PT <: TensorProductBasis{T, 2}}
     function PolarSplineBasis(parent::PT) where {T, PT <: TensorProductBasis{T, 2}}
         radial, angular = bases(parent)
 
-        radial isa BSplineBasis || throw(ArgumentError(
-            "the radial axis of a polar spline basis must be a clamped BSplineBasis, not a " *
-            "$(nameof(typeof(radial))): the construction reads the value and the derivative " *
-            "of the first two functions at the pole, which only a clamped knot vector " *
-            "localises there"))
+        _pole_end_is_clamped(radial) || throw(ArgumentError(
+            "the pole end of the radial axis of a polar spline basis must be clamped and " *
+            "unconstrained, and $(_pole_end_description(radial)) is not: the construction " *
+            "reads the value and the derivative of the first two functions at the pole, " *
+            "which only a clamped knot vector localises there, and recombining that end " *
+            "would change the two rows the pole triangle replaces. The *rim* — the outer " *
+            "end — may carry any boundary condition; pass " *
+            "`RecombinedBSplineBasis(parent, Free(), Dirichlet())`"))
         angular isa PeriodicBSplineBasis || throw(ArgumentError(
             "the angular axis of a polar spline basis must be a PeriodicBSplineBasis, not a " *
             "$(nameof(typeof(angular))): the pole is reached from every angle, so the " *
@@ -158,10 +201,15 @@ struct PolarSplineBasis{T, PT <: TensorProductBasis{T, 2}}
         Ns = nbasis(radial)
         Nθ = nbasis(angular)
 
-        # The radial axis needs no count of its own. A clamped basis has `ncells + p`
-        # functions, a mesh has at least one cell, and `p ≥ 2` is checked above, so `Ns ≥ 3`
-        # always and at least one row survives the pole triangle. The angular axis is not
-        # implied by anything and is checked.
+        # A clamped basis has `ncells + p` functions and `p ≥ 2` is checked above, so `Ns ≥ 3`
+        # follows and this cannot fail. A rim condition removes one function, and then it can:
+        # `ncells = 1` at `p = 2` leaves `Ns = 2`, the two rows the pole triangle replaces and
+        # nothing else, i.e. a basis of the three pole functions alone.
+        Ns ≥ 3 || throw(ArgumentError(
+            "the radial basis has $(Ns) functions, too few for the pole triangle to leave " *
+            "anything behind: it replaces the first two rows, so a third is needed for the " *
+            "space to hold more than the triangle itself; refine the radial mesh or raise " *
+            "its degree"))
         Nθ ≥ 3 || throw(ArgumentError(
             "the angular basis has $(Nθ) functions, too few for the pole triangle: the " *
             "constants, C and S must be independent in it, and on fewer than three " *

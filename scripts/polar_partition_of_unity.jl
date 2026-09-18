@@ -14,6 +14,12 @@
 #      is known independently from that experiment's own P₁ triangulation, so the number has
 #      something to disagree with.
 #
+# A third section measures what a homogeneous-Dirichlet **rim** does to the first claim, where
+# the expected answer is that it **breaks it** — the rim removes the constant, so the sum is no
+# longer one. That is the space working as designed, and the measurement that says so is
+# *where* it breaks: in the last radial cell and nowhere else, exactly zero at the rim itself,
+# with everything the pole triangle owns unchanged.
+#
 # Run: julia --project=. --startup-file=no scripts/polar_partition_of_unity.jl
 
 using LinearAlgebra
@@ -165,7 +171,60 @@ println("  passes: ", mapped_pass)
 println()
 
 ## ---------------------------------------------------------------------------------------
+## What a homogeneous-Dirichlet rim does to all of this
+## ---------------------------------------------------------------------------------------
 
-allpass = pu_pass && nonneg_pass && param_pass && mapped_pass
+# The expected answer here is that the partition of unity **fails**, and that is the point of
+# the space rather than a defect in it: a homogeneous-Dirichlet rim removes the constant, so
+# `Σ_k Ψ_k ≡ 1` is false by construction. A check that only reported the failure would not
+# distinguish this space from a broken one, so what is measured is *where* it fails.
+#
+# It fails in the last radial cell and nowhere else. Outside the support of the removed row the
+# sum is unchanged to round-off; at the rim it is exactly zero. Everything the pole triangle
+# owns — non-negativity, the two-row identity, C⁰ and C¹ — is untouched, which
+# `polar_continuity.jl` measures directly.
+
+Brim = PolarSplineBasis(RecombinedBSplineBasis(radial, Free(), Dirichlet()), angular)
+qrim = PolarSplineQuadrature(Brim)
+
+h = meshwidth(radial)
+inner = [x for x in pts if x[1] ≤ 1 - h]
+outer = [x for x in pts if x[1] > 1 - h]
+
+pu_rim_inner = maximum(x -> abs(sum(evaluate(Brim, k, x) for k in eachindex(Brim)) - 1), inner)
+pu_rim_all = maximum(x -> abs(sum(evaluate(Brim, k, x) for k in eachindex(Brim)) - 1), pts)
+pu_rim_edge = maximum(θ -> abs(sum(evaluate(Brim, k, (1.0, θ)) for k in eachindex(Brim))),
+    range(0, 2π; length = 33)[1:32])
+
+# The pole triangle is the same object, so its own identity and its non-negativity are too.
+pole_sum_rim = maximum(x -> abs(sum(evaluate(Brim, k, x) for k in 1:3) - tworow_sum(x)), pts)
+λmin_rim = minimum(k -> minimum(x -> evaluate(Brim, k, x), pts), 1:3)
+
+# The area therefore does **not** come out, and by the amount the removed row carried.
+𝟙rim = ones(nbasis(Brim))
+area_rim = 𝟙rim' * mass_matrix(qrim) * 𝟙rim
+
+println("a homogeneous-Dirichlet rim — the partition of unity is false, and only at the rim")
+println("  functions              ", nbasis(B), " free → ", nbasis(Brim), " with the rim")
+@printf("  max |Σ_k Ψ_k − 1|   over the %3d points with s ≤ 1 − h   = %.3e   (must hold)\n",
+    length(inner), pu_rim_inner)
+@printf("  max |Σ_k Ψ_k − 1|   over all %3d points                 = %.3e   (must be O(1))\n",
+    length(pts), pu_rim_all)
+@printf("  max |Σ_k Ψ_k|       at s = 1                            = %.3e   (must be 0)\n",
+    pu_rim_edge)
+@printf("  max |Σ_{k≤3} Ψ_k − Σ(N₁+N₂)Mⱼ|                          = %.3e   (unchanged)\n",
+    pole_sum_rim)
+@printf("  least value of a pole function                          = %.3e   (unchanged)\n",
+    λmin_rim)
+@printf("  𝟙ᵀ 𝕄 𝟙 = %.6f against 2π = %.6f — the constant is not in the space\n",
+    area_rim, 2π)
+rim_pass = pu_rim_inner < 1e-13 && pu_rim_all > 1e-2 && pu_rim_edge == 0 &&
+           pole_sum_rim < 1e-13 && λmin_rim ≥ -1e-15 && area_rim < 2π
+println("  passes: ", rim_pass)
+println()
+
+## ---------------------------------------------------------------------------------------
+
+allpass = pu_pass && nonneg_pass && param_pass && mapped_pass && rim_pass
 println(allpass ? "ALL CHECKS PASS" : "SOME CHECK FAILED")
 exit(allpass ? 0 : 1)

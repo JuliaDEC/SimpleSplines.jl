@@ -35,8 +35,10 @@ f(x, y) = exp(x / 2) * cos(2y) + sin(x * y)
 
 target(s, θ) = f(s * cos(θ), s * sin(θ))
 
-function level(ns, nθ)
-    B = PolarSplineBasis(BSplineBasis(UniformMesh(ns, 0 .. 1), P),
+function level(ns, nθ; rim = false, tgt = target)
+    radial = BSplineBasis(UniformMesh(ns, 0 .. 1), P)
+    B = PolarSplineBasis(
+        rim ? RecombinedBSplineBasis(radial, Free(), Dirichlet()) : radial,
         PeriodicBSplineBasis(UniformMesh(nθ, 0 .. 2π), P))
     q = PolarSplineQuadrature(B)
 
@@ -44,7 +46,7 @@ function level(ns, nθ)
     w = quadrature_weights(q)
     grid = [(s, θ) for s in sq, θ in θq]
 
-    F = [target(x...) for x in grid][:]
+    F = [tgt(x...) for x in grid][:]
     û = l2_projection(q, F)
     r = basis_values(q, (0, 0))' * û .- F
 
@@ -134,5 +136,61 @@ println("order at the finest pair:  ds dθ ", round(orders_param[end]; digits = 
     "   s ds dθ ", round(orders_disk[end]; digits = 3), "   (expected ", P + 1, ")")
 println("pole/bulk error ratio:     ", round.(pole_ratios; digits = 3))
 println()
-println(rate_ok && pole_ok ? "ALL CHECKS PASS" : "SOME CHECK FAILED")
-exit(rate_ok && pole_ok ? 0 : 1)
+
+## ---------------------------------------------------------------------------------------
+## A homogeneous-Dirichlet rim keeps the order, on a target it can represent
+## ---------------------------------------------------------------------------------------
+
+# The expected answer is full order p+1 again, and the qualification matters: a
+# homogeneous-Dirichlet space cannot approximate a function that does not vanish at the rim,
+# and measuring it against one would report a reduced rate that is a statement about the
+# target rather than about the space. So the target is multiplied by 1 − x² − y², which is
+# smooth on the closed disk, vanishes on its boundary and is not a polynomial in the chart.
+#
+# What is being checked is that the rim condition costs nothing at the *pole*: the order and
+# the pole/bulk error ratio must be what the free space gives. The positive control that the
+# space really is constrained is in `polar_partition_of_unity.jl` and `polar_continuity.jl`,
+# not here — the free space is printed beside the rim one and the two agree to five digits,
+# because a target vanishing at the rim makes almost no use of the row the rim removes. That
+# agreement is the result rather than a control: the rim condition costs no approximation
+# power on a target it can represent, at the pole or anywhere else.
+
+rim_target(s, θ) = (1 - s^2) * target(s, θ)
+
+rim_results = [level(ns, nθ; rim = true, tgt = rim_target) for (ns, nθ) in LEVELS]
+free_results = [level(ns, nθ; tgt = rim_target) for (ns, nθ) in LEVELS]
+
+println("a homogeneous-Dirichlet rim, on a target that vanishes at the rim")
+println()
+@printf("%10s %8s  %12s %7s  %12s %7s\n",
+    "ns × nθ", "N", "‖e‖_dsdθ rim", "order", "‖e‖_dsdθ free", "order")
+for (i, ((ns, nθ), r)) in enumerate(zip(LEVELS, rim_results))
+    fr = free_results[i]
+    if i == 1
+        @printf("%4d × %-4d %8d  %12.4e %7s  %12.4e %7s\n",
+            ns, nθ, r.nbasis, r.err_param, "—", fr.err_param, "—")
+    else
+        @printf("%4d × %-4d %8d  %12.4e %7.3f  %12.4e %7.3f\n",
+            ns, nθ, r.nbasis, r.err_param,
+            log2(rim_results[i - 1].err_param / r.err_param), fr.err_param,
+            log2(free_results[i - 1].err_param / fr.err_param))
+    end
+end
+println()
+
+rim_orders = [log2(rim_results[i - 1].err_param / rim_results[i].err_param)
+              for i in 2:length(rim_results)]
+rim_pole_ratios = [maximum(r.cellrms[1:2]) / maximum(r.cellrms[3:end]) for r in rim_results]
+
+println("order at the finest pair:  ", round(rim_orders[end]; digits = 3),
+    "   (expected ", P + 1, ")")
+println("pole/bulk error ratio:     ", round.(rim_pole_ratios; digits = 3))
+rim_ok = rim_orders[end] > P + 0.7 && all(<(3), rim_pole_ratios)
+println("  passes: ", rim_ok)
+println()
+
+## ---------------------------------------------------------------------------------------
+
+allpass = rate_ok && pole_ok && rim_ok
+println(allpass ? "ALL CHECKS PASS" : "SOME CHECK FAILED")
+exit(allpass ? 0 : 1)

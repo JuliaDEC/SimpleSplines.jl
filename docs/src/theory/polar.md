@@ -192,3 +192,37 @@ the disk converges at ``p+1``, and the error is not concentrated in the pole cel
 `scripts/polar_approximation_order.jl`, which measures both, and
 `scripts/polar_continuity.jl`, which measures ``C^0`` and ``C^1`` against controls that must
 fail.
+
+## [The rim](@id theory-polar-rim)
+
+The pole is not a boundary condition — it couples the two axes, which is why
+[`PolarSplineBasis`](@ref) exists beside [`TensorProductBasis`](@ref) rather than as a fourth
+`BSplineBasis(mesh, p, bc)` method. The **rim**, the outer end ``s = b``, is an ordinary
+boundary condition on the radial axis, and it is imposed where every other one is:
+
+```julia
+radial = RecombinedBSplineBasis(BSplineBasis(UniformMesh(8, 0 .. 1), 3), Free(), Dirichlet())
+B = PolarSplineBasis(radial, PeriodicBSplineBasis(UniformMesh(16, 0 .. 2π), 3))
+```
+
+The two recombinations compose with nothing to reconcile, and the reason is the whole of it:
+the pole triangle is built from the first two radial functions and their derivatives at
+``s = a``, and a basis recombined at the *right* end leaves those two functions exactly as the
+clamped parent has them. So ``R`` is built as before on the smaller ``N_s``, and ``C^0`` and
+``C^1`` at the pole are preserved identically rather than to round-off. Recombining the *pole*
+end is rejected, which is the guard [`PolarSplineBasis`](@ref) enforces.
+
+What a homogeneous-Dirichlet rim costs is the **partition of unity**. It removes ``N_\theta``
+functions and with them the constant, so ``\sum_k \Psi_k \equiv 1`` becomes false — in the last
+radial cell, and only there. That is the point of such a space rather than a defect in it: a
+relaxation whose state lives in a space containing ``1`` conserves the mass Casimir of any
+bracket built on it, and relaxes to a different member of the equilibrium family than the one a
+Dirichlet problem asks for.
+
+The approximation order survives, on a target the space can represent. Measured on a smooth
+function vanishing on the disk's boundary, the order is ``p+1`` and the free space's error on
+the same target agrees to five digits, so the rim costs no approximation power. A target that
+does *not* vanish at the rim converges at a reduced rate, which is a statement about the target
+and not about the space. `scripts/polar_continuity.jl`,
+`scripts/polar_partition_of_unity.jl` and `scripts/polar_approximation_order.jl` each measure
+their own part of this, with the constant as the control that the rim condition did something.

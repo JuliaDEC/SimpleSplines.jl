@@ -55,12 +55,31 @@ using Test
         @test_throws ArgumentError PolarSplineBasis(
             radial, PeriodicBSplineBasis(UniformMesh(2, 0 .. 2π), 3))       # Nθ < 3
 
-        # There is no radial counterpart to the last one, and there is no guard for it either:
-        # a clamped basis has `ncells + p` functions and both are bounded below already, so at
-        # least one radial row always survives the pole triangle.
+        # A *clamped* radial basis needs no counterpart to the last one: it has `ncells + p`
+        # functions and both are bounded below already, so at least one radial row always
+        # survives the pole triangle.
         @test minimum(nbasis(BSplineBasis(UniformMesh(n, 0 .. 1), p))
         for p in 2:6, n in 1:6) ==
               3
+
+        # A rim condition removes one, and then the guard is reachable: the smallest case is
+        # one cell at degree two, which leaves the two rows the triangle replaces and nothing
+        # else. This is why that guard exists rather than being an unreachable assertion.
+        @test nbasis(RecombinedBSplineBasis(
+            BSplineBasis(UniformMesh(1, 0 .. 1), 2), Free(), Dirichlet())) == 2
+        @test_throws ArgumentError PolarSplineBasis(
+            RecombinedBSplineBasis(
+                BSplineBasis(UniformMesh(1, 0 .. 1), 2), Free(), Dirichlet()), angular)
+
+        # Recombining the *pole* end is what is rejected, at either order of the two
+        # conditions, and a rim-only recombination is what is accepted.
+        @test_throws ArgumentError PolarSplineBasis(
+            RecombinedBSplineBasis(radial, Dirichlet(), Free()), angular)
+        @test_throws ArgumentError PolarSplineBasis(
+            RecombinedBSplineBasis(radial, Neumann(), Dirichlet()), angular)
+        @test PolarSplineBasis(
+            RecombinedBSplineBasis(radial, Free(), Dirichlet()), angular) isa
+              PolarSplineBasis
     end
 
     @testset "$(rpad("the premise: only the first two rows reach the pole",76))" begin
@@ -288,5 +307,79 @@ using Test
         l2_projection!(ŵ, q, x -> 1.0)
         @test ŵ ≈ û
         @test_throws DimensionMismatch l2_projection!(zeros(nbasis(B) + 1), q, x -> 1.0)
+    end
+
+    @testset "$(rpad("a homogeneous-Dirichlet rim composes with the pole triangle",76))" begin
+        rim = RecombinedBSplineBasis(radial, Free(), Dirichlet())
+        D = PolarSplineBasis(rim, angular)
+
+        # One angular row of degrees of freedom is what a rim condition costs, and the pole
+        # triangle is untouched: three functions still, reaching the same two rows.
+        @test nbasis(D) == nbasis(B) - Nθ
+        @test nbasis(D) == 3 + (Ns - 3) * Nθ
+        RD = recombination_matrix(D)
+        @test size(RD) == (nbasis(rim) * Nθ, nbasis(D))
+        @test all(length(nzrange(RD, k)) == 2Nθ for k in 1:3)
+        @test rank(Matrix(RD)) == nbasis(D)
+
+        # The premise of the composition: the two functions the triangle is built from are the
+        # clamped parent's, unchanged, so the number the whole construction rests on is too.
+        @test all(evaluate(rim, k, x) == evaluate(radial, k, x)
+        for k in 1:2, x in range(0, 1; length = 41))
+        @test evaluate(rim, 2, 0.0, 1) == evaluate(radial, 2, 0.0, 1)
+        @test pole_triangle(D) == pole_triangle(B)
+
+        # The rim itself: every basis function vanishes there, so no spline in the space has a
+        # value at s = 1. This is the property the space is built for.
+        @test all(evaluate(D, k, (1.0, θ)) == 0 for k in 1:nbasis(D), θ in angles)
+        û = randn(nbasis(D))
+        @test all(abs(evaluate(D, û, (1.0, θ))) < 1e-14 for θ in angles)
+
+        # C⁰ and C¹ at the pole are unaffected — nothing the triangle reads has changed.
+        spread(v) = maximum(v) - minimum(v)
+        @test maximum(k -> spread([evaluate(D, k, (0.0, θ)) for θ in angles]),
+            1:nbasis(D)) < 1e-14
+        θn = nodes(angular)
+        A = [
+             [evaluate(angular, cos.(θn), θ) for θ in angles] [evaluate(angular, sin.(θn), θ)
+                                                               for θ in angles]]
+        b = [evaluate(D, û, (0.0, θ), (1, 0)) for θ in angles]
+        @test norm(A * (A \ b) - b, Inf) / max(1, norm(b, Inf)) < 1e-14
+
+        # The partition of unity is now false, and that is the point: it survives everywhere
+        # except the last radial cell, and the constant is therefore no longer in the space.
+        h = meshwidth(radial)
+        @test all(abs(sum(evaluate(D, k, (s, θ)) for k in 1:nbasis(D)) - 1) < 1e-13
+        for s in range(0, 1 - h; length = 21), θ in angles)
+        @test all(sum(evaluate(D, k, (1.0, θ)) for k in 1:nbasis(D)) == 0 for θ in angles)
+
+        # evaluate_all rebuilds the index formula from `Ns` rather than reading `R`, so it is
+        # the one path a rim condition could break silently. Both its indices and its values.
+        for x in ((0.01, 1.1), (0.5, 2.3), (0.97, 5.0)), d in ((0, 0), (1, 0), (0, 1))
+
+            idx, vals = evaluate_all(D, x, d)
+            full = [evaluate(D, k, x, d) for k in 1:nbasis(D)]
+            @test all(1 .<= idx .<= nbasis(D))
+            @test all(vals[t] ≈ full[idx[t]] for t in eachindex(idx))
+            # Absolute, not `≈`: for d ≠ (0,0) both sums are a derivative of a partition of
+            # unity, which is zero, and a relative tolerance between two round-off-sized
+            # numbers compares nothing. A dropped function would show as its own O(1) value.
+            @test abs(sum(vals) - sum(full)) < 1e-12
+        end
+
+        # Assembly goes through `R` alone, so it needs nothing of its own — but the mass
+        # matrix must still be nonsingular on the smaller space.
+        qd = PolarSplineQuadrature(D)
+        M = mass_matrix(qd)
+        @test size(M) == (nbasis(D), nbasis(D))
+        @test issymmetric(M)
+        @test isposdef(Matrix(M))
+
+        # And the constant has left: it is in the free space to round-off and not in this one.
+        @test all(abs(evaluate(B, l2_projection(PolarSplineQuadrature(B), x -> 1.0),
+                      (s, 0.7)) - 1) < 1e-11 for s in range(0, 1; length = 9))
+        v̂ = l2_projection(qd, x -> 1.0)
+        @test maximum(abs(evaluate(D, v̂, (s, 0.7)) - 1) for s in range(0, 1; length = 9)) >
+              0.5
     end
 end
