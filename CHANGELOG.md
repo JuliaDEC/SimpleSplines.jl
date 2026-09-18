@@ -94,6 +94,11 @@ An exact bound rather than `0.8`, because `0.8.17` is the broken version and a r
 excludes it has no other spelling. Lift it to `0.8` when the walk skips weak dependencies it
 cannot locate, and drop this pin with it.
 
+**The pin above is lifted.** Aqua 0.8.18, released 2026-09-18, fixes exactly the case the pin
+describes — its own release notes say `test_persistent_tasks` "no longer errors on a weak
+dependency that is also listed in `[deps]` but not installed" — so `ChainRulesCore` behind
+`AbstractFFTs` no longer stops the manifest walk. `[compat]` reads plain `Aqua = "0.8"` again.
+
 ### Documentation
 
 The gallery gains a ninth problem, **Poisson on a disc**, placed after Poisson on a box:
