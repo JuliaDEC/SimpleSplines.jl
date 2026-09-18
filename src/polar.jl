@@ -123,8 +123,11 @@ every assembly is the parent's conjugated by that matrix — exactly as for a
 The radial basis must be **clamped and unconstrained at the pole end**, of degree at least
 two; degree one has no ``C^1`` to impose, and a periodic radial axis has no pole. A plain
 [`BSplineBasis`](@ref) qualifies, and so does a [`RecombinedBSplineBasis`](@ref) carrying
-[`Free`](@ref) at the pole end — see *The rim* below. At least one radial row must survive
-the pole triangle, which a clamped basis gives for free and a rim condition can take away.
+[`Free`](@ref) at the pole end — see *The rim* below. A rim condition of order ``m`` must
+also leave the first two radial functions alone, which needs ``m + 3`` functions in the
+parent it recombines; only a condition of order two or more can fail that. At least one
+radial row must survive the pole triangle, which a clamped basis gives for free and a rim
+condition can take away.
 The angular basis must be a [`PeriodicBSplineBasis`](@ref) with at least three functions, or
 ``C``, ``S`` and the constants are not independent and the triangle is degenerate.
 
@@ -143,7 +146,9 @@ B = PolarSplineBasis(radial, PeriodicBSplineBasis(UniformMesh(16, 0 .. 2π), 3))
 The two compose with nothing to reconcile. A rim condition changes only rows the pole
 triangle does not read: the triangle is built from the first two functions and their
 derivatives at ``s = a``, and a right-recombined basis's first two functions **are** the
-clamped parent's, unchanged. So ``R`` is built exactly as before, on the smaller ``N_s``.
+clamped parent's, unchanged — as long as the rim block stays clear of them, which is what the
+``m + 3`` requirement above asks for. So ``R`` is built exactly as before, on the smaller
+``N_s``.
 
 What this costs is the **partition of unity**: a homogeneous-Dirichlet rim removes the
 constant from the space by construction, so ``\sum_k \Psi_k \equiv 1`` becomes false — near
@@ -167,6 +172,27 @@ function _pole_end_description(radial::RecombinedBSplineBasis)
     "a RecombinedBSplineBasis carrying $(boundary(radial)[1]) at the pole end"
 end
 
+# An unrecombined pole end is not enough on its own: the triangle needs its first two
+# functions to be the parent's, and a rim condition of order `m` replaces the parent's last
+# `m + 1` functions by `m` combinations of them. Only functions `1 : Np - m - 1` pass through
+# unchanged, so on a coarse enough parent the rim block reaches function two, a *third*
+# function then has a derivative at the pole, and the C¹ constraint the triangle imposes is
+# built on the wrong rows — silently, since C⁰ survives it. `Np ≥ m + 3` is what keeps the
+# first two clear; only a condition of order two or more can reach past the `Ns ≥ 3` guard
+# below and fail it.
+_check_rim_clears_pole(radial) = nothing
+function _check_rim_clears_pole(radial::RecombinedBSplineBasis)
+    m = constraint_order(boundary(radial)[2])
+    Np = nbasis(parent(radial))
+    Np ≥ m + 3 || throw(ArgumentError(
+        "the rim condition of the radial axis reaches the pole: $(boundary(radial)[2]) is " *
+        "of order $(m), so it recombines the last $(m + 1) of the parent's $(Np) " *
+        "functions, and the first two — the ones the pole triangle is built from — are not " *
+        "among the ones left unchanged. A parent of at least $(m + 3) functions keeps them " *
+        "clear; refine the radial mesh or raise its degree"))
+    return nothing
+end
+
 struct PolarSplineBasis{T, PT <: TensorProductBasis{T, 2}}
     parent::PT
     λ::Matrix{T}
@@ -186,6 +212,7 @@ struct PolarSplineBasis{T, PT <: TensorProductBasis{T, 2}}
             "would change the two rows the pole triangle replaces. The *rim* — the outer " *
             "end — may carry any boundary condition; pass " *
             "`RecombinedBSplineBasis(parent, Free(), Dirichlet())`"))
+        _check_rim_clears_pole(radial)
         angular isa PeriodicBSplineBasis || throw(ArgumentError(
             "the angular axis of a polar spline basis must be a PeriodicBSplineBasis, not a " *
             "$(nameof(typeof(angular))): the pole is reached from every angle, so the " *

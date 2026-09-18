@@ -210,7 +210,9 @@ the pole triangle is built from the first two radial functions and their derivat
 ``s = a``, and a basis recombined at the *right* end leaves those two functions exactly as the
 clamped parent has them. So ``R`` is built as before on the smaller ``N_s``, and ``C^0`` and
 ``C^1`` at the pole are preserved identically rather than to round-off. Recombining the *pole*
-end is rejected, which is the guard [`PolarSplineBasis`](@ref) enforces.
+end is rejected, and so is a rim condition of order ``m`` on a parent of fewer than ``m + 3``
+functions, whose recombination block would reach the first two: both are guards
+[`PolarSplineBasis`](@ref) enforces.
 
 What a homogeneous-Dirichlet rim costs is the **partition of unity**. It removes ``N_\theta``
 functions and with them the constant, so ``\sum_k \Psi_k \equiv 1`` becomes false — in the last

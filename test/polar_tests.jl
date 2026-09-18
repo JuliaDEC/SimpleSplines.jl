@@ -80,6 +80,23 @@ using Test
         @test PolarSplineBasis(
             RecombinedBSplineBasis(radial, Free(), Dirichlet()), angular) isa
               PolarSplineBasis
+
+        # A rim condition of order m recombines the parent's last m+1 functions, so on a
+        # parent of fewer than m+3 it reaches the first two — the ones the pole triangle is
+        # built from — and a third function acquires a derivative at the pole. Only order two
+        # or more gets past the `Ns ≥ 3` guard to do so. The count of radial functions with a
+        # derivative at the pole is what separates the two cases, and it is what the pole
+        # triangle assumes is two.
+        coarse = RecombinedBSplineBasis(BSplineBasis(UniformMesh(2, 0 .. 1), 2),
+            Free(), Natural())
+        @test nbasis(coarse) == 3
+        @test count(!iszero, [evaluate(coarse, k, 0.0, 1) for k in 1:nbasis(coarse)]) == 3
+        @test_throws ArgumentError PolarSplineBasis(coarse, angular)
+
+        fine = RecombinedBSplineBasis(BSplineBasis(UniformMesh(3, 0 .. 1), 2),
+            Free(), Natural())
+        @test count(!iszero, [evaluate(fine, k, 0.0, 1) for k in 1:nbasis(fine)]) == 2
+        @test PolarSplineBasis(fine, angular) isa PolarSplineBasis
     end
 
     @testset "$(rpad("the premise: only the first two rows reach the pole",76))" begin

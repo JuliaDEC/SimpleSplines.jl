@@ -95,9 +95,15 @@ compose with nothing to reconcile, and any rim condition — `Neumann`, `Robin` 
 way. Recombining the *pole* end is still rejected, and the error message now says which end it
 means.
 
-One guard that was previously unreachable is now reachable and is restored: a rim condition
-removes a radial function, so `ncells = 1` at degree 2 leaves only the two rows the pole
-triangle replaces.
+Two guards come with it. One was previously unreachable and is restored: a rim condition removes
+a radial function, so `ncells = 1` at degree 2 leaves only the two rows the pole triangle
+replaces. The other is new and is what makes "the first two radial functions are the clamped
+parent's" true rather than merely usually true — a rim condition of order `m` recombines the
+parent's last `m+1` functions, so a parent with fewer than `m+3` of them has its rim block reach
+function two, and the C¹ constraint is then built on the wrong rows while C⁰ still holds.
+Measured before the guard, on a `Natural` rim at 2 cells of degree 2: the C¹ gradient residual
+at the pole was 0.635, against 3.6×10⁻¹⁶ for every valid basis. Only a condition of order ≥ 2 can
+reach past the first guard, which is why `Dirichlet` and `Neumann` rims cannot hit it.
 
 **Measurements**, in the same four scripts:
 
