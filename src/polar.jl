@@ -1,3 +1,43 @@
+# The two guards on the radial axis, before the docstring rather than between it and the
+# struct: anything in that gap detaches the docstring, and only a docs build says so.
+
+# The pole end needs two things and neither is "the basis is a `BSplineBasis`": the knot
+# vector must be clamped, so that exactly two functions reach the pole, and that end must be
+# unrecombined, so that those two functions are the ones the triangle is built from. A basis
+# recombined at the *outer* end only satisfies both — its first two functions are the clamped
+# parent's, unchanged — which is what lets a rim condition compose with the pole triangle
+# instead of having to rebuild it.
+_pole_end_is_clamped(radial) = radial isa BSplineBasis
+function _pole_end_is_clamped(radial::RecombinedBSplineBasis)
+    boundary(radial)[1] isa Free
+end
+
+_pole_end_description(radial) = "a $(nameof(typeof(radial)))"
+function _pole_end_description(radial::RecombinedBSplineBasis)
+    "a RecombinedBSplineBasis carrying $(boundary(radial)[1]) at the pole end"
+end
+
+# An unrecombined pole end is not enough on its own: the triangle needs its first two
+# functions to be the parent's, and a rim condition of order `m` replaces the parent's last
+# `m + 1` functions by `m` combinations of them. Only functions `1 : Np - m - 1` pass through
+# unchanged, so on a coarse enough parent the rim block reaches function two, a *third*
+# function then has a derivative at the pole, and the C¹ constraint the triangle imposes is
+# built on the wrong rows — silently, since C⁰ survives it. `Np ≥ m + 3` is what keeps the
+# first two clear; only a condition of order two or more can reach past the `Ns ≥ 3` guard
+# in the constructor and fail it.
+_check_rim_clears_pole(radial) = nothing
+function _check_rim_clears_pole(radial::RecombinedBSplineBasis)
+    m = constraint_order(boundary(radial)[2])
+    Np = nbasis(parent(radial))
+    Np ≥ m + 3 || throw(ArgumentError(
+        "the rim condition of the radial axis reaches the pole: $(boundary(radial)[2]) is " *
+        "of order $(m), so it recombines the last $(m + 1) of the parent's $(Np) " *
+        "functions, and the first two — the ones the pole triangle is built from — are not " *
+        "among the ones left unchanged. A parent of at least $(m + 3) functions keeps them " *
+        "clear; refine the radial mesh or raise its degree"))
+    return nothing
+end
+
 @doc raw"""
     PolarSplineBasis(radial, angular)
     PolarSplineBasis(B::TensorProductBasis)
@@ -156,43 +196,6 @@ the rim, and only there. The ``C^0`` and ``C^1`` properties at the pole are unto
 no function the triangle is built from has changed. [`polynomial_reproduction`](@ref) of the
 radial axis says which of the two regimes a basis is in.
 """
-# The pole end needs two things and neither is "the basis is a `BSplineBasis`": the knot
-# vector must be clamped, so that exactly two functions reach the pole, and that end must be
-# unrecombined, so that those two functions are the ones the triangle is built from. A basis
-# recombined at the *outer* end only satisfies both — its first two functions are the clamped
-# parent's, unchanged — which is what lets a rim condition compose with the pole triangle
-# instead of having to rebuild it.
-_pole_end_is_clamped(radial) = radial isa BSplineBasis
-function _pole_end_is_clamped(radial::RecombinedBSplineBasis)
-    boundary(radial)[1] isa Free
-end
-
-_pole_end_description(radial) = "a $(nameof(typeof(radial)))"
-function _pole_end_description(radial::RecombinedBSplineBasis)
-    "a RecombinedBSplineBasis carrying $(boundary(radial)[1]) at the pole end"
-end
-
-# An unrecombined pole end is not enough on its own: the triangle needs its first two
-# functions to be the parent's, and a rim condition of order `m` replaces the parent's last
-# `m + 1` functions by `m` combinations of them. Only functions `1 : Np - m - 1` pass through
-# unchanged, so on a coarse enough parent the rim block reaches function two, a *third*
-# function then has a derivative at the pole, and the C¹ constraint the triangle imposes is
-# built on the wrong rows — silently, since C⁰ survives it. `Np ≥ m + 3` is what keeps the
-# first two clear; only a condition of order two or more can reach past the `Ns ≥ 3` guard
-# below and fail it.
-_check_rim_clears_pole(radial) = nothing
-function _check_rim_clears_pole(radial::RecombinedBSplineBasis)
-    m = constraint_order(boundary(radial)[2])
-    Np = nbasis(parent(radial))
-    Np ≥ m + 3 || throw(ArgumentError(
-        "the rim condition of the radial axis reaches the pole: $(boundary(radial)[2]) is " *
-        "of order $(m), so it recombines the last $(m + 1) of the parent's $(Np) " *
-        "functions, and the first two — the ones the pole triangle is built from — are not " *
-        "among the ones left unchanged. A parent of at least $(m + 3) functions keeps them " *
-        "clear; refine the radial mesh or raise its degree"))
-    return nothing
-end
-
 struct PolarSplineBasis{T, PT <: TensorProductBasis{T, 2}}
     parent::PT
     λ::Matrix{T}
