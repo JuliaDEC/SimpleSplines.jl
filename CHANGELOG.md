@@ -277,9 +277,29 @@ say so. That section is again verbatim the shared copy.
 The two example blocks were run rather than read. The first still gives `2.08e-6`, to three
 significant figures the number beside it, and both prose claims it makes still hold.
 
-`scripts/weighted_matrix_allocation.jl` is new. It reproduces every figure in the *Open Issues*
-entry for `weighted_matrix`, and prints the result matrix's own size beside the allocation
-totals; see that entry for what the re-measurement changed.
+`scripts/weighted_matrix_allocation.jl` is new. It reproduces every figure of the
+`weighted_matrix` allocation, and prints the result matrix's own size beside the allocation
+totals; see issue #26 for what the re-measurement changed.
+
+---
+
+**`CHANGELOG.md` no longer carries an `## Open Issues` section.** A changelog records what
+changed; an open question is not history, and a reader looking for known problems does not
+think to scroll past every past release to find them. The two entries it held are now issues:
+
+- **#25**, an ill-scaled `Robin` condition degrading silently. Still open, and it needs a
+  decision rather than a commit: the cause-level fix is to pivot the recombination anchor,
+  which changes which basis functions a `RecombinedBSplineBasis` produces.
+- **#26**, `weighted_matrix` allocating a fresh matrix per call. Measured and deliberately not
+  acted on — one call costs less than one mass solve, so it is not on the critical path.
+
+Both are **rewritten** rather than copied across. The `weighted_matrix` entry had a wrong
+attribution with a correction stacked underneath it, which is what a section of standing notes
+turns into when the rule that an entry is never rewritten is applied to text that was never
+history. The issue says it once, correctly.
+
+Open questions belong in the tracker from now on, or in a task file when they are a body of
+work rather than a single decision.
 
 ## [0.2.0] — 2026-09-14
 
@@ -890,78 +910,3 @@ Found in review of the branch, not by the suite, and each now has a regression t
   dependency now resolves from the registry.
 - `CompatHelper.yml` invoked `julia` without installing it. The runner images no longer ship
   a Julia, so the workflow failed before CompatHelper started; it now sets Julia up first.
-
-## Open Issues
-
-### An ill-scaled `Robin` condition degrades silently
-
-`_recombination` anchors each end block on the last of the `m+1` functions the condition
-reaches, because only that one contributes to `a_{m+1} = c_m D^m φ_{m+1}(a)`. That anchor is
-nonzero whenever the leading coefficient `c_m` is — but *how* nonzero is the caller's, not the
-construction's. `Robin(1.0, 1e-20)` puts a small coefficient on the highest derivative, the
-anchor is then numerically zero, and the recombination coefficients `-a_t/a_{m+1}` become huge:
-the mass matrix comes out finite with a condition number already `Inf`, `cholesky(…;
-check = false)` reports `issuccess` on it anyway, and the projection that
-follows looks plausible.
-
-A finiteness guard would catch only the most extreme case and is a symptom patch — the
-condition number is already useless well before anything becomes `Inf`. The cause-level fix is
-to **pivot**: anchor on whichever of the `m+1` candidates has the largest `|a_i|`, which bounds
-every entry of `R` by 1 by construction. That is deferred rather than done because it changes
-which basis functions the recombination produces, and with them `nodes` and every assembly
-conjugated by `R` — a design change to accept or decline, not a follow-up commit.
-
-### `weighted_matrix` allocates a fresh matrix per call
-
-`weighted_matrix` is the one assembly that cannot be memoised — it depends on the field, so a
-downstream time integrator asks for a *different* one inside every Newton iteration of every
-step, which is exactly the call pattern under which allocation matters most. Measured at
-`N = 128`, `p = 3`, `nq = 5`:
-
-| | bytes |
-|:--|--:|
-| `f .* q.w` temporary | 5 kB |
-| `Φₐ * Diagonal(f ⊙ w)` | 47 kB |
-| `(Φₐ D) * Φᵦᵀ` sparse-sparse product | 208 kB |
-| **total per call** | **260 kB** |
-
-The `f ⊙ w` temporary is the same one `l2_projection!` no longer pays and could be removed the
-same way, with the buffer the quadrature already holds. The other 255 kB are not a temporary
-at all: they are the result, a freshly built `SparseMatrixCSC` with its `colptr`, `rowval` and
-`nzval` allocated and its structure recomputed from scratch.
-
-That structure does not depend on `f`. For a fixed `(a, b)` the sparsity pattern of
-`Φₐ diag(f ⊙ w) Φᵦᵀ` is the same for every coefficient — a basis function overlaps only the
-`2p+1` others whose supports meet its own — so the pattern could be assembled once per
-`(a, b)`, cached beside the `mixed_matrix` results, and only `nzval` refilled per
-call. That turns 260 kB into zero.
-
-What it needs is an in-place entry point, `weighted_matrix!(A, q, f, a, b)`, since the present
-signature has nowhere to write. Callers holding a matrix across steps would use it and callers
-wanting a value would keep the allocating form. Deferred rather than done because it widens
-the API, and because the sparse triple product would have to be written out by hand against
-the cached pattern instead of delegating to `SparseArrays`, which is the part that needs to be
-got right rather than merely written.
-
-**Re-measured, and the paragraph above attributes the bytes to the wrong thing.** The table
-reproduces to the byte — 5184, 47296 and 207600 bytes, 260080 in total. The result does not.
-At `N = 128` the returned matrix has 896 nonzeros, and its `colptr`, `rowval` and `nzval` are
-**15368 bytes together**, not 255 kB. The other 245 kB are the sparse intermediate `Φₐ D` and
-working storage inside `SparseArrays`' sparse-sparse product. The cached-pattern fix still
-takes the figure to zero, but by removing a scratch buffer rather than the result.
-
-**The premise the fix rests on holds:** for fixed `(a, b)` the pattern is the same for
-`sin`, `exp` and a constant field, `colptr` and `rowval` equal in all three.
-
-**The call is not on the critical path, so this is recorded rather than acted on.** One call
-costs **less than one mass solve** at `N = 128`, 256 and 512, by a factor of 1.6 to 1.8 — and a
-Newton iteration pays at least one mass solve. The ratio is what reproduces; the absolute
-microseconds move 20 % with what else is running on the machine, so they are not quoted here.
-A downstream relaxation puts its time in the Jacobian assembly, three to four orders of
-magnitude above either. Removing 260 kB from a call that small buys nothing that can be
-measured, and it would widen the API to do it.
-
-`scripts/weighted_matrix_allocation.jl` reproduces every figure in this section, including the
-result's own size beside the allocation totals, which is the distinction the original
-paragraph missed. `Base.summarysize` is not the tool for it: on this matrix it reports 137288
-bytes, nine times the storage the three arrays actually hold.
