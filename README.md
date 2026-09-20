@@ -19,17 +19,23 @@ contractions. Mass solves go through a representation chosen by the basis — an
 periodic uniform basis, a banded Cholesky for a bounded one, and a factored Kronecker product
 in several dimensions.
 
+It also provides the polar spline space of a mapped disk, where the left radial edge of the
+parameter rectangle is a pole rather than a boundary. A plain tensor product is discontinuous
+there; the polar basis replaces the first two radial rows with three functions spanning the
+constants and linears of a chart at the pole, which makes the space C¹ across it by
+construction. That space carries its own assembly and a boundary condition on the rim.
+
 It is not a curve- and surface-modelling library: there are no NURBS, no knot insertion, no
 degree elevation and no least-squares fitting of data. It is for discretising a differential
 equation and then solving with the result.
 
 ## Installation
 
-No version is registered yet, so install from the repository:
+The package is registered in the General registry:
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/JuliaDEC/SimpleSplines.jl")
+Pkg.add("SimpleSplines")
 ```
 
 ## Example
@@ -86,6 +92,12 @@ none, so a documentation- or workflow-only commit is not slowed down by it:
 - **`fatou lint`**, when `fatou` is installed — **advisory only**, and deliberately so: its
   `unused-import` rule does not follow `include`, so it flags the load-bearing imports of every
   module file.
+- **Unicode NFC** — **blocks** a staged file that is not NFC-normalised. Sources here are NFC, so a
+  file that is not is a regression: a pattern typed in NFC silently matches nothing in a decomposed
+  file, which defeats `grep`, an editor search and Documenter's doctest comparison alike. Fix with
+  `julia --startup-file=no ~/Research/Environment/Harness/githooks/nfc.jl --apply <files>`. The invariant
+  is `s == Unicode.normalize(s, :NFC)`, not the absence of combining marks — `q̇`, `v̄` and `f̄` have
+  no precomposed codepoint and are two codepoints in NFC as well.
 - **`using <Package>`**, which catches a syntax error or a broken `include` — **blocks**.
 
 **`pre-push`** runs the full test suite with `--check-bounds=auto`, but **only when pushing to
