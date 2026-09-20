@@ -192,7 +192,7 @@ The manual gains a **Polar Splines** usage page, `docs/src/usage/polar.md`, besi
 page of the same name. Every other object has one, and the polar space did not; the README
 promises "a usage page per object".
 
-It carries what the theory page deliberately does not: the constructor and its four guards,
+It carries what the theory page deliberately does not: the constructor and its six guards,
 the accessor table, and the three shapes that differ from the tensor-product layer a reader
 arrives from. Coefficients are a **vector**, not an array, because the index set is not a
 product. `evaluate_all` returns the indices of the nonzero block rather than its first index,
@@ -210,7 +210,8 @@ homogeneous-Dirichlet rim, which is the partition of unity the rim removed — w
 angular axis reports `0` on every polar space and says nothing about it. Neither number is a
 statement about the disk, where the free space reproduces 1, x̃ and ỹ.
 
-Every block on the page is executed by the docs build.
+Every block that computes something is executed by the docs build — 32 of the 35. The other
+three give a signature and are not run.
 
 ---
 

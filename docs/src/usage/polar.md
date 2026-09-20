@@ -39,7 +39,7 @@ B = PolarSplineBasis(radial, angular)
 nbasis(B), nbasis(parent(B)), 3 + (nbasis(radial) - 2) * nbasis(angular)
 ```
 
-### The four guards
+### The guards
 
 Each rejects a space the construction cannot build, rather than building a wrong one.
 
@@ -61,7 +61,7 @@ end
 
 The other two are counts: a radial basis of fewer than three functions leaves nothing behind
 the triangle, and an angular basis of fewer than three cannot hold the constants, ``C`` and
-``S`` independently. The fourth guard is on the rim, below.
+``S`` independently. Two more are on the ends of the radial axis, below.
 
 ## Accessors
 
@@ -190,7 +190,7 @@ BD = PolarSplineBasis(rim, angular)
 nbasis(BD), nbasis(B)
 ```
 
-`Free()` at the pole end is required, and it is the fourth guard:
+`Free()` at the pole end is required, and the constructor checks it:
 
 ```@example upolar
 try
@@ -201,6 +201,11 @@ catch err
     println(first(split(err.msg, ':')))
 end
 ```
+
+A rim condition of order ``m`` must also leave the first two radial functions alone — the ones
+the pole triangle is built from — which needs ``m + 3`` functions in the parent it recombines.
+That is the sixth guard. Only a condition of order two or more, such as `Natural()`, can fail
+it without first failing the count of three radial functions above.
 
 **A Dirichlet rim removes the constant, so the partition of unity is gone** — in the last
 radial cell, and only there. That is the point of such a space, not a defect in it; see
@@ -367,7 +372,8 @@ Neither number is a statement about the disk. What the free space reproduces *th
 is a property of the pole triangle rather than of either axis. `scripts/polar_continuity.jl`
 and `scripts/polar_approximation_order.jl` measure it.
 
-**There is no `weighted_matrix` with a non-separable coefficient on the parent**, for the same
-reason there is none for a [`TensorProductQuadrature`](@ref) — but here it does not matter: the
-polar tabulation is already one flat sparse table over the whole grid, so
-[`weighted_matrix`](@ref) takes any coefficient at all.
+**There is no `weighted_matrix` for the parent [`TensorProductQuadrature`](@ref)**, because a
+non-separable coefficient does not factorise per axis and the parent holds only the
+one-dimensional tabulations — but here it does not matter: the polar tabulation is already one
+flat sparse table over the whole grid, so [`weighted_matrix`](@ref) takes any coefficient at
+all.
