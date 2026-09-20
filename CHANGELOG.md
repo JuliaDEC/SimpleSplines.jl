@@ -875,11 +875,12 @@ takes the figure to zero, but by removing a scratch buffer rather than the resul
 `sin`, `exp` and a constant field, `colptr` and `rowval` equal in all three.
 
 **The call is not on the critical path, so this is recorded rather than acted on.** One call
-costs less than one mass solve at every size measured — 17.2 µs against 29.8 µs at `N = 128`,
-35.9 against 57.6 at 256, 62.7 against 106.7 at 512 — and a Newton iteration pays at least one
-mass solve. A downstream relaxation puts its time in the Jacobian assembly, which is three to
-four orders of magnitude above either. Removing 260 kB from a call that is under 3 % of the
-iteration it sits in buys nothing that can be measured, and it would widen the API to do it.
+costs **less than one mass solve** at `N = 128`, 256 and 512, by a factor of 1.6 to 1.8 — and a
+Newton iteration pays at least one mass solve. The ratio is what reproduces; the absolute
+microseconds move 20 % with what else is running on the machine, so they are not quoted here.
+A downstream relaxation puts its time in the Jacobian assembly, three to four orders of
+magnitude above either. Removing 260 kB from a call that small buys nothing that can be
+measured, and it would widen the API to do it.
 
 `scripts/weighted_matrix_allocation.jl` reproduces every figure in this section, including the
 result's own size beside the allocation totals, which is the distinction the original

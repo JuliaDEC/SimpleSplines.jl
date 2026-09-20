@@ -56,10 +56,12 @@ for N in LEVELS
 
     weighted_matrix(q, f, 0, 1)          # warm-up before the allocation counts
 
-    total = @allocated weighted_matrix(q, f, 0, 1)
-    temp = @allocated (f .* w)
-    left = @allocated (Φₐ * D)
-    product = @allocated (L * Φᵦ')
+    # A single `@allocated` reading is not always in family: one component can come out above
+    # the total it is part of. The smallest of several readings is the figure.
+    total = minimum(_ -> @allocated(weighted_matrix(q, f, 0, 1)), 1:REPEATS)
+    temp = minimum(_ -> @allocated(f .* w), 1:REPEATS)
+    left = minimum(_ -> @allocated(Φₐ * D), 1:REPEATS)
+    product = minimum(_ -> @allocated(L * Φᵦ'), 1:REPEATS)
 
     rhs = ones(nbasis(q.basis))
 
