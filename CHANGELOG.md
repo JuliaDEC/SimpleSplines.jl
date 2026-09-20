@@ -186,6 +186,22 @@ Measured by the build, over `n = 4, 8, 16, 32` radial cells with `2n` angular ce
   and *not* concentrated at the pole — the claim `scripts/polar_approximation_order.jl` measures
   for a projection, now seen on a solve.
 
+---
+
+The README is corrected on three counts. It said no version was registered and sent the reader to
+the repository URL; 0.1.0 and 0.2.0 are both in the General registry, so it now gives
+`Pkg.add("SimpleSplines")`. Its overview named every part of the package except the polar spline
+space, which is the largest thing this release adds. And its *Git hooks* section was a stage
+behind the hook it describes — the **Unicode NFC** check blocks a commit, and the README did not
+say so. That section is again verbatim the shared copy.
+
+The two example blocks were run rather than read. The first still gives `2.08e-6`, to three
+significant figures the number beside it, and both prose claims it makes still hold.
+
+`scripts/weighted_matrix_allocation.jl` is new. It reproduces every figure in the *Open Issues*
+entry for `weighted_matrix`, and prints the result matrix's own size beside the allocation
+totals; see that entry for what the re-measurement changed.
+
 ## [0.2.0] — 2026-09-14
 
 ### New Features
@@ -847,3 +863,26 @@ wanting a value would keep the allocating form. Deferred rather than done becaus
 the API, and because the sparse triple product would have to be written out by hand against
 the cached pattern instead of delegating to `SparseArrays`, which is the part that needs to be
 got right rather than merely written.
+
+**Re-measured, and the paragraph above attributes the bytes to the wrong thing.** The table
+reproduces to the byte — 5184, 47296 and 207600 bytes, 260080 in total. The result does not.
+At `N = 128` the returned matrix has 896 nonzeros, and its `colptr`, `rowval` and `nzval` are
+**15368 bytes together**, not 255 kB. The other 245 kB are the sparse intermediate `Φₐ D` and
+working storage inside `SparseArrays`' sparse-sparse product. The cached-pattern fix still
+takes the figure to zero, but by removing a scratch buffer rather than the result.
+
+**The premise the fix rests on holds:** for fixed `(a, b)` the pattern is the same for
+`sin`, `exp` and a constant field, `colptr` and `rowval` equal in all three.
+
+**The call is not on the critical path, so this is recorded rather than acted on.** One call
+costs **less than one mass solve** at `N = 128`, 256 and 512, by a factor of 1.6 to 1.8 — and a
+Newton iteration pays at least one mass solve. The ratio is what reproduces; the absolute
+microseconds move 20 % with what else is running on the machine, so they are not quoted here.
+A downstream relaxation puts its time in the Jacobian assembly, three to four orders of
+magnitude above either. Removing 260 kB from a call that small buys nothing that can be
+measured, and it would widen the API to do it.
+
+`scripts/weighted_matrix_allocation.jl` reproduces every figure in this section, including the
+result's own size beside the allocation totals, which is the distinction the original
+paragraph missed. `Base.summarysize` is not the tool for it: on this matrix it reports 137288
+bytes, nine times the storage the three arrays actually hold.
