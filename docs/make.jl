@@ -37,6 +37,7 @@ makedocs(;
             "Boundary Conditions" => "usage/boundary.md",
             "Assembly" => "usage/quadrature.md",
             "Tensor Products" => "usage/tensorproduct.md",
+            "Polar Splines" => "usage/polar.md",
             "Splines" => "usage/splines.md"
         ],
         "Gallery" => "gallery.md",

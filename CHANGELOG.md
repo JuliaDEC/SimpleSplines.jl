@@ -188,6 +188,32 @@ Measured by the build, over `n = 4, 8, 16, 32` radial cells with `2n` angular ce
 
 ---
 
+The manual gains a **Polar Splines** usage page, `docs/src/usage/polar.md`, beside the theory
+page of the same name. Every other object has one, and the polar space did not; the README
+promises "a usage page per object".
+
+It carries what the theory page deliberately does not: the constructor and its four guards,
+the accessor table, and the three shapes that differ from the tensor-product layer a reader
+arrives from. Coefficients are a **vector**, not an array, because the index set is not a
+product. `evaluate_all` returns the indices of the nonzero block rather than its first index,
+because near the pole the block is not contiguous — the three pole functions sit at the front
+of the index set. And `quadrature_weights` is one number per grid point where the parent's is
+a per-axis tuple.
+
+It also states what has **no** polar method, and why each absence is a statement rather than a
+gap: `size`, `nodes` and `LinearIndices`, because there is no per-axis shape;
+`boundary` and `local_width`, because the pole is not a boundary condition and a pole
+function is not local in θ; `Spline`, which holds an array; and
+`polynomial_reproduction`. That last one needs care, so the page measures it rather than
+describing it: the **radial** axis is the discriminator — `p` on a free space and `-1` with a
+homogeneous-Dirichlet rim, which is the partition of unity the rim removed — while the
+angular axis reports `0` on every polar space and says nothing about it. Neither number is a
+statement about the disk, where the free space reproduces 1, x̃ and ỹ.
+
+Every block on the page is executed by the docs build.
+
+---
+
 The README is corrected on three counts. It said no version was registered and sent the reader to
 the repository URL; 0.1.0 and 0.2.0 are both in the General registry, so it now gives
 `Pkg.add("SimpleSplines")`. Its overview named every part of the package except the polar spline
