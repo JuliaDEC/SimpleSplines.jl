@@ -5,7 +5,7 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — targeting 0.3.0
+## [0.3.0] — 2026-09-20
 
 ### New Features
 
@@ -307,6 +307,22 @@ warning on the *Assembly* usage page said the 260 kB per call was "most of it th
 rest is the `Φₐ D` intermediate and scratch inside the sparse-sparse product. The warning now
 says that, and points at `scripts/weighted_matrix_allocation.jl` for the breakdown. This
 sentence shipped in 0.1.0 and 0.2.0, so a reader of either manual has it wrong.
+
+### Breaking Changes
+
+**None.** Nothing a caller can reach changes behaviour, and nothing is removed or renamed. The
+`src/` diff against 0.2.0 is 964 inserted lines and **no deleted line**: five new exports, a
+new file, and new methods on existing generics. The two `[compat]` bounds that move are
+*widened* — `CompactBasisFunctions = "0.3, 0.4"` and
+`ContinuumArrays = "0.18, 0.19, 0.20, 0.21"` — so an environment that resolved against 0.2.0
+resolves against this release too.
+
+The minor bump reflects the size of the release rather than a break. Registrator labels any
+`0.y.0` version BREAKING whatever it contains, which is why this section exists and says so
+explicitly rather than being absent.
+
+**What it costs a downstream package:** a `[compat] SimpleSplines = "0.2"` bound does not admit
+this version. Widen it to `"0.2, 0.3"`; no other change is needed.
 
 ## [0.2.0] — 2026-09-14
 
