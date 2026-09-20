@@ -394,9 +394,9 @@ using Test
         # rather than asserted here, where a timing would be flaky.
     end
 
-    @testset "$(rpad("the column path did not weaken the circulance check",76))" begin
+    @testset "$(rpad("the column path does not weaken the circulance check",76))" begin
         # A `Circulant` is circulant by construction, so its check has nothing to verify.
-        # That must not have disabled the check for everything else.
+        # Every other matrix is still verified.
         n = 16
         G = Matrix(mass_matrix(SplineQuadrature(PeriodicBSplineBasis(GradedMesh(n, 2π), 3))))
         @test_throws ArgumentError CirculantMass(G, n)

@@ -395,18 +395,18 @@ function _check_circulant(M::AbstractMatrix{T}, c::Vector{T}, n::Int, rtol) wher
     return nothing
 end
 
-# The sparse check visits only the stored entries. Within a column the row indices are
-# distinct and r = mod1(i-j+1, n) is a bijection on 1:n, so counting the stored entries whose
-# predicted value is above the tolerance and comparing that count with the number of such
-# entries in `c` covers the *unstored* positions as well: a column missing one of them cannot
-# reach the count. Both directions in O(nnz), which at n = 512 is 0.004 ms against the 9.1 ms
-# of probing all n^2 positions of a sparse matrix one `getindex` at a time.
 # A `Circulant` is circulant by construction — there is no entry that could disagree with the
 # column, because there is no entry stored apart from the column. Skipping the check is not a
 # shortcut here but the reason the vector path is O(n): the generic method would probe all n²
 # positions through `getindex` and put the quadratic cost back.
 _check_circulant(::Circulant{T}, ::Vector{T}, ::Int, rtol) where {T} = nothing
 
+# The sparse check visits only the stored entries. Within a column the row indices are
+# distinct and r = mod1(i-j+1, n) is a bijection on 1:n, so counting the stored entries whose
+# predicted value is above the tolerance and comparing that count with the number of such
+# entries in `c` covers the *unstored* positions as well: a column missing one of them cannot
+# reach the count. Both directions in O(nnz), which at n = 512 is 0.004 ms against the 9.1 ms
+# of probing all n^2 positions of a sparse matrix one `getindex` at a time.
 function _check_circulant(M::SparseMatrixCSC{T}, c::Vector{T}, n::Int, rtol) where {T}
     tol = rtol * maximum(abs, c)
     rows = rowvals(M)

@@ -83,5 +83,5 @@ let n = 128
     @printf("n = %d, construction allocations: matrix %d B, column %d B\n", n, aM, ac)
     println("The column path allocates more, because `Circulant` copies its column and the")
     println("matrix path only reads a matrix the caller had already built. The saving is in")
-    println("what the operator then holds, and in the check it no longer runs.")
+    println("what the operator then holds, and in the check it does not run.")
 end
