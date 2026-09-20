@@ -293,13 +293,20 @@ think to scroll past every past release to find them. The two entries it held ar
 - **#26**, `weighted_matrix` allocating a fresh matrix per call. Measured and deliberately not
   acted on — one call costs less than one mass solve, so it is not on the critical path.
 
-Both are **rewritten** rather than copied across. The `weighted_matrix` entry had a wrong
-attribution with a correction stacked underneath it, which is what a section of standing notes
-turns into when the rule that an entry is never rewritten is applied to text that was never
-history. The issue says it once, correctly.
+#25 is the same text restructured, with a section naming what a decision turns on. **#26 is
+rewritten**, which was the point: it had a wrong attribution with a correction stacked
+underneath it, because the rule that an entry is never rewritten was being applied to text
+that was never history. The issue says it once, correctly.
 
 Open questions belong in the tracker from now on, or in a task file when they are a body of
 work rather than a single decision.
+
+The manual carried the **same wrong attribution**, and it is corrected. The `weighted_matrix`
+warning on the *Assembly* usage page said the 260 kB per call was "most of it the freshly built
+`SparseMatrixCSC` result rather than a temporary". The result is 15 kB of it; almost all the
+rest is the `Φₐ D` intermediate and scratch inside the sparse-sparse product. The warning now
+says that, and points at `scripts/weighted_matrix_allocation.jl` for the breakdown. This
+sentence shipped in 0.1.0 and 0.2.0, so a reader of either manual has it wrong.
 
 ## [0.2.0] — 2026-09-14
 

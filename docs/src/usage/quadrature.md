@@ -180,10 +180,12 @@ eltype(weighted_matrix(q, cis, 0, 0)), eltype(mixed_matrix(q, 0, 0))
 !!! warning "`weighted_matrix` allocates on every call, and there is no in-place form"
     It is the one assembly that cannot be memoised — it depends on the field, so a time
     integrator asks for a *different* one inside every Newton iteration. Measured at
-    ``N = 128``, ``p = 3``, ``n_q = 5`` that is about 260 kB per call, most of it the freshly
-    built `SparseMatrixCSC` result rather than a temporary. `weighted_matrix!` does not exist
-    yet; a caller in that position should hold the matrix across steps and accept the
-    allocation, or assemble the contraction by hand against a cached sparsity pattern.
+    ``N = 128``, ``p = 3``, ``n_q = 5`` that is 260 kB per call, and almost all of it is the
+    intermediate ``\Phi_a D`` and scratch inside the sparse-sparse product — the returned
+    matrix is 15 kB of it. `weighted_matrix!` does not exist yet; a caller in that position
+    should hold the matrix across steps and accept the allocation, or assemble the contraction
+    by hand against a cached sparsity pattern. `scripts/weighted_matrix_allocation.jl`
+    measures the breakdown.
 
 ## Projection
 
