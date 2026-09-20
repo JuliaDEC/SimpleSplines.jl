@@ -196,7 +196,57 @@ function _bandwidth(M::AbstractMatrix)
 end
 
 @doc raw"""
+    Circulant(c)
+
+The ``n \times n`` circulant matrix whose first column is `c`, stored as that column alone:
+``C_{ij} = c_{(i - j) \bmod n + 1}``.
+
+A representation, not an arithmetic type. It exists so that a caller holding a circulant
+matrix it can *describe* in ``O(n)`` — a periodic assembly, or such an assembly plus a
+rank-one shift — can hand [`CirculantMass`](@ref) that description instead of materialising
+``n^2`` entries for it to read one column back out of. `getindex`, `size` and `Matrix` are
+what it provides; `Matrix` materialises, and is the way out when something downstream really
+does want the whole matrix.
+
+The column is copied, so a later mutation of the caller's vector cannot leave the operator's
+stored eigenvalues describing a different matrix from the one `mass_matrix` reports.
+
+```jldoctest
+julia> C = SimpleSplines.Circulant([2.0, 1.0, 0.0, 1.0]);
+
+julia> size(C), C[1, 1], C[2, 1], C[1, 2]
+((4, 4), 2.0, 1.0, 1.0)
+
+julia> Matrix(C)
+4×4 Matrix{Float64}:
+ 2.0  1.0  0.0  1.0
+ 1.0  2.0  1.0  0.0
+ 0.0  1.0  2.0  1.0
+ 1.0  0.0  1.0  2.0
+```
+"""
+struct Circulant{T} <: AbstractMatrix{T}
+    c::Vector{T}
+
+    function Circulant(c::AbstractVector{T}) where {T}
+        isempty(c) && throw(ArgumentError(
+            "a circulant matrix is described by a nonempty first column"))
+        # `Vector{T}(c)` copies whatever it is given, including a `Vector`, which is the
+        # point: see the docstring.
+        new{T}(Vector{T}(c))
+    end
+end
+
+Base.size(C::Circulant) = (length(C.c), length(C.c))
+
+Base.@propagate_inbounds function Base.getindex(C::Circulant, i::Integer, j::Integer)
+    @boundscheck checkbounds(C, i, j)
+    return @inbounds C.c[mod1(i - j + 1, length(C.c))]
+end
+
+@doc raw"""
     CirculantMass(M, n; kernel = :reject, rtol = sqrt(eps(T)))
+    CirculantMass(c::AbstractVector, n; kernel = :reject)
 
 The mass matrix of a uniform periodic mesh, represented by the eigenvalues of its circulant
 structure and a pair of planned real transforms.
@@ -221,6 +271,15 @@ construction checks that the matrix really is circulant — a silent mismatch he
 wrong answers on every mesh that is uniform by accident rather than by construction. `rtol`
 is the tolerance of that check, *relative* to the largest entry of the first column, so that
 the verdict survives a rescaling of the assembly and holds in every element type.
+
+**The second form takes the first column itself**, wrapped in a [`Circulant`](@ref). That is
+the whole matrix, because a circulant matrix is its first column, and it is what a caller
+that can describe its operator in ``O(n)`` should pass: the matrix form makes it build ``n^2``
+entries for this constructor to read ``n`` of them back out, and then keeps them for the life
+of the operator. The circulance check has nothing to verify on it, so the path is ``O(n)`` in
+construction as well as in storage, and `rtol` is accepted only by the matrix form because
+only there is there anything to compare. `mass_matrix` of such an operator returns the
+[`Circulant`](@ref); `Matrix` of it materialises.
 
 `kernel = :project` accepts a matrix that is singular with the constants in its kernel, and
 gives the constant mode a zero factor instead of an infinite one. That is the Moore–Penrose
@@ -272,6 +331,10 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
 
         new{T, MT, typeof(plan), typeof(iplan)}(M, ĉ⁻¹, plan, iplan, buf, Int(n))
     end
+end
+
+function CirculantMass(c::AbstractVector, n::Integer; kernel = :reject)
+    CirculantMass(Circulant(c), n; kernel)
 end
 
 # The solve multiplies by these rather than dividing by the eigenvalues themselves. It moves
@@ -338,6 +401,12 @@ end
 # entries in `c` covers the *unstored* positions as well: a column missing one of them cannot
 # reach the count. Both directions in O(nnz), which at n = 512 is 0.004 ms against the 9.1 ms
 # of probing all n^2 positions of a sparse matrix one `getindex` at a time.
+# A `Circulant` is circulant by construction — there is no entry that could disagree with the
+# column, because there is no entry stored apart from the column. Skipping the check is not a
+# shortcut here but the reason the vector path is O(n): the generic method would probe all n²
+# positions through `getindex` and put the quadratic cost back.
+_check_circulant(::Circulant{T}, ::Vector{T}, ::Int, rtol) where {T} = nothing
+
 function _check_circulant(M::SparseMatrixCSC{T}, c::Vector{T}, n::Int, rtol) where {T}
     tol = rtol * maximum(abs, c)
     rows = rowvals(M)
@@ -470,4 +539,33 @@ end
 function mass_operator(M::AbstractMatrix, b::PeriodicBSplineBasis; kernel = :reject)
     mesh(b) isa UniformMesh ? CirculantMass(M, nbasis(b); kernel) :
     FactorizedMass(M; kernel)
+end
+
+@doc raw"""
+    mass_operator(c::AbstractVector, b::PeriodicBSplineBasis; kernel = :reject)
+
+Build the [`CirculantMass`](@ref) of the circulant matrix whose **first column** is `c`.
+
+This is the ``O(n)`` entry point for a caller that can describe its operator without
+materialising it. A periodic stiffness matrix shifted by the rank-one mean projector is the
+case it exists for: ``S + \mathbb{1}\mathbb{1}^T/n`` is circulant like ``S``, with first
+column `S[:, 1] .+ inv(n)`, but forming it fills an ``O(n)`` sparse matrix into an ``O(n^2)``
+dense one.
+
+```julia
+S = stiffness_matrix(SplineQuadrature(b))
+mass_operator(S[:, 1] .+ inv(size(S, 1)), b)      # O(n); the matrix form is O(n²)
+```
+
+Only a [`UniformMesh`](@ref) is accepted. A first column describes the whole matrix only when
+the matrix is circulant, and on any other mesh it is not — so this raises rather than falling
+through to [`FactorizedMass`](@ref), which would read the vector as something it is not.
+"""
+function mass_operator(c::AbstractVector, b::PeriodicBSplineBasis; kernel = :reject)
+    mesh(b) isa UniformMesh || throw(ArgumentError(
+        "a first column describes a mass matrix only when the matrix is circulant, which " *
+        "needs a uniform mesh; this basis is on a $(nameof(typeof(mesh(b)))), where the " *
+        "assembly is banded modulo N but not circulant. Pass the assembled matrix instead, " *
+        "which takes the factorised representation"))
+    CirculantMass(c, nbasis(b); kernel)
 end
