@@ -321,6 +321,135 @@ using Test
         @test_throws DimensionMismatch CirculantMass(Matrix(mass_matrix(q)), 15)
     end
 
+    @testset "$(rpad("a first column describes the matrix, and indexes like it",76))" begin
+        # The baseline is the assembled matrix, not the indexing formula the type uses: a
+        # comprehension written the way `getindex` is written would pass by construction.
+        for p in 2:4, n in (12, 16, 31)
+
+            q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(n, 2π), p))
+            M = Matrix(mass_matrix(q))
+            C = SimpleSplines.Circulant(M[:, 1])
+            @test size(C) == (n, n)
+            @test eltype(C) == Float64
+            @test maximum(abs, Matrix(C) - M) < 1e-12
+            @test C[3, 1] == M[3, 1]
+        end
+    end
+
+    @testset "$(rpad("the column and the matrix build the same operator",76))" begin
+        for p in 2:4, n in (12, 16, 32)
+
+            q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(n, 2π), p))
+            b = basis(q)
+            M = mass_matrix(q)
+
+            opM = mass_operator(M, b)
+            opc = mass_operator(Vector(M[:, 1]), b)
+
+            @test opc isa CirculantMass
+            @test mass_matrix(opc) isa SimpleSplines.Circulant
+            @test size(opc) == size(opM)
+            @test maximum(abs, Matrix(opc) - Matrix(opM)) < 1e-12
+
+            for _ in 1:3
+                x = randn(n)
+                @test opc \ x ≈ opM \ x atol = 1e-10
+                @test M * (opc \ x) ≈ x atol = 1e-10
+            end
+        end
+    end
+
+    @testset "$(rpad("the column path is O(n) where the matrix path is O(n²)",76))" begin
+        # The case from the issue: a periodic stiffness matrix shifted by the rank-one mean
+        # projector is circulant like the matrix it came from, but forming it turns an O(n)
+        # sparse assembly into an O(n²) dense one, and `CirculantMass` then keeps it.
+        p, n = 5, 128
+        b = PeriodicBSplineBasis(UniformMesh(n, 2π), p)
+        S = stiffness_matrix(SplineQuadrature(b))
+        shifted = Matrix(S) .+ inv(n)
+        column = Vector(S[:, 1]) .+ inv(n)
+
+        opM = mass_operator(shifted, b)
+        opc = mass_operator(column, b)
+
+        # Same operator, reached two ways.
+        x = randn(n)
+        @test opc \ x ≈ opM \ x atol = 1e-10
+        @test shifted * (opc \ x) ≈ x atol = 1e-8
+
+        # The saving is the point of the change, so it is measured rather than asserted. The
+        # dense n×n matrix is 8n² bytes and the column is 8n; a factor of ten is far inside
+        # that and leaves room for the plans and buffers both operators carry.
+        @test Base.summarysize(opc) < Base.summarysize(opM) / 10
+
+        # It is a saving in *storage*, and the operator keeps it: the whole point is that the
+        # matrix is not retained for the life of the operator. `mass_matrix` proves which of
+        # the two is held.
+        @test Base.summarysize(mass_matrix(opc)) < Base.summarysize(mass_matrix(opM)) / 10
+
+        # Construction is O(n) rather than O(n²) as well, because the circulance check has
+        # nothing to verify on a `Circulant`. That is a saving in time, not in allocation —
+        # the caller allocated the matrix either way, and the check is an allocation-free
+        # loop over n² entries — so it is measured in `scripts/circulant_column_cost.jl`
+        # rather than asserted here, where a timing would be flaky.
+    end
+
+    @testset "$(rpad("the column path does not weaken the circulance check",76))" begin
+        # A `Circulant` is circulant by construction, so its check has nothing to verify.
+        # Every other matrix is still verified.
+        n = 16
+        G = Matrix(mass_matrix(SplineQuadrature(PeriodicBSplineBasis(GradedMesh(n, 2π), 3))))
+        @test_throws ArgumentError CirculantMass(G, n)
+
+        # and a banded-but-not-circulant matrix is still refused
+        B = Matrix(mass_matrix(SplineQuadrature(BSplineBasis(UniformMesh(n, 2π), 3))))
+        @test_throws ArgumentError CirculantMass(B, nbasis(BSplineBasis(UniformMesh(n, 2π), 3)))
+    end
+
+    @testset "$(rpad("what the column form refuses",76))" begin
+        n = 16
+        u = PeriodicBSplineBasis(UniformMesh(n, 2π), 3)
+        c = Vector(mass_matrix(SplineQuadrature(u))[:, 1])
+
+        # a mesh on which a first column does not describe the matrix at all
+        for meshtype in (GradedMesh, RandomMesh)
+            g = PeriodicBSplineBasis(meshtype(n, 2π), 3)
+            @test_throws ArgumentError mass_operator(c, g)
+        end
+
+        # a column of the wrong length
+        @test_throws DimensionMismatch CirculantMass(c, n - 1)
+        @test_throws DimensionMismatch mass_operator(c[1:(n - 1)], u)
+
+        # and no column at all
+        @test_throws ArgumentError SimpleSplines.Circulant(Float64[])
+    end
+
+    @testset "$(rpad("the column form carries the deflation and the element type",76))" begin
+        n = 32
+        b = PeriodicBSplineBasis(UniformMesh(n, 2π), 3)
+        S = stiffness_matrix(SplineQuadrature(b))
+
+        # the constants are in the kernel of a periodic stiffness matrix, so `:reject` must
+        # refuse the column exactly as it refuses the matrix
+        @test_throws ArgumentError mass_operator(Vector(S[:, 1]), b)
+
+        opc = mass_operator(Vector(S[:, 1]), b; kernel = :project)
+        opM = mass_operator(Matrix(S), b; kernel = :project)
+        x = randn(n)
+        x .-= sum(x) / n
+        @test opc \ x ≈ opM \ x atol = 1e-10
+        @test abs(sum(opc \ x)) < 1e-10          # the solution has no constant component
+
+        # Float32 all the way through, rather than promoting to Float64 somewhere inside
+        q32 = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(n, 2.0f0π), 3))
+        c32 = Vector(mass_matrix(q32)[:, 1])
+        @test eltype(c32) == Float32
+        op32 = mass_operator(c32, basis(q32))
+        @test op32 isa CirculantMass{Float32}
+        @test eltype(mass_matrix(op32)) == Float32
+    end
+
     @testset "$(rpad("the basis tabulation is sparse",76))" begin
         # (p+1)*nq structurally nonzero entries per row is the whole point: a dense
         # tabulation makes every assembly cost N times more than it should

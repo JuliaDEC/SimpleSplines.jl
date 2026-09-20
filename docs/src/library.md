@@ -117,6 +117,7 @@ l2_projection!
 ```@docs
 MassOperator
 CirculantMass
+Circulant
 BandedMass
 FactorizedMass
 KroneckerMass

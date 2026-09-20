@@ -125,6 +125,58 @@ reach past the first guard, which is why `Dirichlet` and `Neumann` rims cannot h
 - **It costs slightly less.** At 64×128, N = 8195 against 8323: assembly 39.5 ms, Cholesky
   15.0 ms, one mass solve 0.708 ms, against 41.6, 16.4 and 0.743 ms for the free space.
 
+---
+
+A circulant mass operator can be built from its **first column** instead of from a
+materialised matrix: `mass_operator(c, b)` and `CirculantMass(c, n)`, with `c` the first
+column. Closes issue #10.
+
+A circulant matrix *is* its first column, and `CirculantMass` only ever read one column out of
+what it was given. A caller that could describe its operator in `O(n)` still had to build
+`O(n²)` entries for it to read `n` of them back, and the operator then kept the matrix for its
+whole life. The case this comes from is a periodic B-spline Poisson solve: the constants lie
+in the kernel of the periodic stiffness matrix, so the solver shifts it by the rank-one mean
+projector before factorising, and `S + 𝟙𝟙ᵀ/n` is circulant like `S` — first column
+`S[:, 1] .+ 1/n` — but structurally full.
+
+The column is wrapped in a new internal `Circulant`, an `AbstractMatrix` holding that column
+alone, with `getindex`, `size` and a `Matrix` that materialises on demand. `mass_matrix` of
+such an operator returns the `Circulant`; nothing else about the operator changes, because
+the solve never touched the stored matrix — it works from the transform of the column, which
+is what the representation exists for.
+
+The circulance check is skipped on a `Circulant`, since there is no entry that could disagree
+with the column. That is what makes the path `O(n)` in construction as well as in storage:
+the generic check probes all `n²` positions. It is skipped **only** for that type — a dense or
+sparse matrix is verified exactly as before, and the suite checks that a graded-mesh matrix
+and a clamped-basis matrix are both still refused.
+
+**Measured**, periodic quintic on a uniform mesh, by `scripts/circulant_column_cost.jl`:
+
+| `n` | operator, from the matrix | from the column | ratio | build, matrix | build, column |
+|----:|--------------------------:|----------------:|------:|--------------:|--------------:|
+| 64 | 34160 B | 1896 B | 18.0 | 12.2 µs | 6.4 µs |
+| 128 | 133488 B | 3432 B | 38.9 | 22.1 µs | 6.8 µs |
+| 256 | 528752 B | 6504 B | 81.3 | 76.4 µs | 16.5 µs |
+| 512 | 2105712 B | 12648 B | 166.5 | 253.5 µs | 17.5 µs |
+
+The storage ratio grows linearly in `n`, which is the `O(n²)` against `O(n)` the change is
+for. Note that the construction saving is in **time**, not allocation: an allocation counter
+reports the column path as the *more* allocating of the two (7248 B against 6096 B at
+`n = 128`), because `Circulant` copies its column while the matrix path only reads a matrix
+the caller had already built, and the check it skips is an allocation-free loop. The suite
+therefore asserts storage; the script measures the time.
+
+Only a `UniformMesh` is accepted. A first column describes the whole matrix only when the
+matrix is circulant, so a periodic basis on a graded or random mesh raises rather than falling
+through to `FactorizedMass`, which would read the vector as something it is not. `kernel =
+:project` works through the column exactly as through the matrix.
+
+Nothing changes for an existing caller: no signature and no return value is altered, and the
+matrix forms of both `mass_operator` and `CirculantMass` behave as before. What this does
+**not** do is make a `CirculantMass` built from a matrix stop storing it — dropping `M` there
+would change what `mass_matrix` returns for existing callers, and that is a separate decision.
+
 ### Bug Fixes
 
 `[compat]` pins `Aqua` to exactly `0.8.16`. This is a **compat-only change**; no package code
