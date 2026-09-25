@@ -4,7 +4,7 @@ using Random
 using StaticArrays
 using Test
 
-# a fixed seed for the draws that no testset seeds itself
+# a fixed seed for any draw that no testset seeds itself
 Random.seed!(0x2f7a91c4)
 
 @testset "$(rpad("Tensor Product Tests",80))" begin
