@@ -3,6 +3,9 @@ using LinearAlgebra
 using Random
 using Test
 
+# a fixed seed, so that a failure on some random coefficients is reproducible
+Random.seed!(0x2f7a91c4)
+
 # A vector whose axes do not start at 1, so that the sweep over a vector of points is tested
 # against one. Written out here rather than taken from OffsetArrays, which is not a dependency
 # of this package and would be one for four lines.

@@ -4,6 +4,9 @@ using Random
 using SparseArrays
 using Test
 
+# a fixed seed, so that a failure on some random coefficients is reproducible
+Random.seed!(0x2f7a91c4)
+
 @testset "$(rpad("Polar Spline Tests",80))" begin
     radial = BSplineBasis(UniformMesh(10, 0 .. 1), 3)
     angular = PeriodicBSplineBasis(UniformMesh(16, 0 .. 2π), 3)

@@ -1,18 +1,18 @@
-using SimpleSplines
-using Random
-using Test
+using SafeTestsets
 
-# The mesh families and the projection tests draw pseudorandom data. The seed is fixed so
-# that a failure is reproducible: a spline assembly that is wrong only for some meshes is
-# exactly the kind of fault a fresh stream each run would turn into an intermittent one.
-Random.seed!(0x2f7a91c4)
+const GROUPS = isempty(ARGS) ? ["core", "slow"] : ARGS
 
-include("aqua_tests.jl")
-include("mesh_tests.jl")
-include("boundary_tests.jl")
-include("bspline_tests.jl")
-include("basis_tests.jl")
-include("mass_tests.jl")
-include("quadrature_tests.jl")
-include("tensorproduct_tests.jl")
-include("polar_tests.jl")
+if "core" in GROUPS
+    @safetestset "Aqua" include("quality/aqua.jl")
+    @safetestset "Meshes" include("mesh.jl")
+    @safetestset "Boundary conditions" include("boundary.jl")
+    @safetestset "Periodic B-spline bases" include("bspline.jl")
+    @safetestset "Clamped and recombined bases" include("basis.jl")
+    @safetestset "Mass operators" include("mass.jl")
+    @safetestset "Spline quadrature" include("quadrature.jl")
+    @safetestset "Tensor products" include("tensorproduct.jl")
+    @safetestset "Polar splines" include("polar.jl")
+end
+if "slow" in GROUPS
+    @safetestset "Doctests" include("quality/doctests.jl")
+end

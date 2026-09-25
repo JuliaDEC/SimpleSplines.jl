@@ -4,6 +4,9 @@ using Random
 using StaticArrays
 using Test
 
+# a fixed seed for the draws that no testset seeds itself
+Random.seed!(0x2f7a91c4)
+
 @testset "$(rpad("Tensor Product Tests",80))" begin
     @testset "$(rpad("construction: degree, domain and condition are per-axis",76))" begin
         bx = BSplineBasis(UniformMesh(10, 0 .. 2π), 3, Periodic())

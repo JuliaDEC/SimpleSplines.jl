@@ -3,6 +3,11 @@ using LinearAlgebra
 using Random
 using Test
 
+# a fixed seed, so that a failure on some random coefficients is reproducible
+Random.seed!(0x2f7a91c4)
+
+include("helpers/meshes.jl")
+
 @testset "$(rpad("Spline Quadrature Tests",80))" begin
     @testset "$(rpad("quadrature_order",76))" begin
         # nq points are exact to degree 2nq-1; degree 3p-1 is what consistency needs

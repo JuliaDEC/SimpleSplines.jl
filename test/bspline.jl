@@ -3,9 +3,10 @@ using LinearAlgebra
 using Random
 using Test
 
-const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
-    (:graded, n -> GradedMesh(n, 2π)),
-    (:random, n -> RandomMesh(n, 2π)))
+# a fixed seed, so that a failure on some random mesh or coefficients is reproducible
+Random.seed!(0x2f7a91c4)
+
+include("helpers/meshes.jl")
 
 @testset "$(rpad("Periodic B-Spline Basis Tests",80))" begin
     @testset "$(rpad("construction and accessors",76))" begin
