@@ -4,7 +4,7 @@ using Random
 using SparseArrays
 using Test
 
-# a fixed seed, so that a failure on some random mesh or right-hand side is reproducible
+# a fixed seed, so that a failure on some random right-hand side is reproducible
 Random.seed!(0x2f7a91c4)
 
 @testset "$(rpad("Mass Operator Tests",80))" begin

@@ -3,7 +3,7 @@ using LinearAlgebra
 using Random
 using Test
 
-# a fixed seed, so that a failure on some random mesh or coefficients is reproducible
+# a fixed seed, so that a failure on some random coefficients is reproducible
 Random.seed!(0x2f7a91c4)
 
 include("helpers/meshes.jl")
