@@ -1,5 +1,5 @@
 # How closely `evaluate(b, û, x, d)` agrees with a sum over the whole basis, and therefore
-# what kind of tolerance the test in `test/basis_tests.jl` may use.
+# what kind of tolerance the test in `test/basis.jl` may use.
 #
 # `evaluate(b, û, x, d)` sums the local block of `local_width(b)` functions, obtained from
 # de Boor's triangular scheme plus derivative lifting. The reference sums `û[j] * evaluate(b,

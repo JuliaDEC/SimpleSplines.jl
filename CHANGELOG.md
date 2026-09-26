@@ -5,6 +5,17 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### New Features
+
+The test files mirror `src/`, with one `@safetestset` per file, each running in its own module.
+`runtests.jl` uses `SafeTestsets` with a `GROUPS` mechanism (`["core","slow"]` by default, or
+from `ARGS`). Test dependencies moved to `test/Project.toml`. A fixed seed per file replaces the
+global seed; the shared mesh collection moved to `test/helpers/meshes.jl`. A new
+`test/quality/doctests.jl` runs docstring doctests via `doctest(SimpleSplines; manual = false)`
+in the slow group.
+
 ## [0.3.0] — 2026-09-20
 
 ### New Features
