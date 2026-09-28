@@ -10,7 +10,7 @@ using Test
 # (`op \ b32` on a `CirculantMass{Float32}`, test/mass.jl) gets none.
 
 if isdefined(JET, :JET_AVAILABLE) ? JET.JET_AVAILABLE : JET.JET_LOADABLE
-    # test/basis.jl: evaluate_all! on a free, a Dirichlet and a periodic bounded basis
+    # test/basis.jl: evaluate_all! on a free and a Dirichlet bounded basis and a periodic basis
     b = BSplineBasis(UniformMesh(32, -10 .. 10), 3)
     br = BSplineBasis(UniformMesh(32, -10 .. 10), 3, Dirichlet())
     bp = BSplineBasis(UniformMesh(32, 0 .. 2π), 3, Periodic())
@@ -48,11 +48,8 @@ if isdefined(JET, :JET_AVAILABLE) ? JET.JET_AVAILABLE : JET.JET_LOADABLE
         (Vector{ComplexF64}, typeof(qc), Vector{ComplexF64});
         target_modules = (SimpleSplines,))))
 
-    # test/mass.jl: mass_solve! on the circulant operators, deflated and not
-    bu = PeriodicBSplineBasis(UniformMesh(32, 2π), 3)
-    opd = mass_operator(stiffness_matrix(SplineQuadrature(bu)), bu; kernel = :project)
-    @test isempty(JET.get_reports(JET.report_opt(mass_solve!,
-        (Vector{Float64}, typeof(opd), Vector{Float64}); target_modules = (SimpleSplines,))))
+    # test/mass.jl: mass_solve! on a circulant operator; the deflated one of the `:project`
+    # kernel has the same type, since the deflation is a stored zero factor, not a type
     opc = mass_operator(q2)
     @test isempty(JET.get_reports(JET.report_opt(mass_solve!,
         (Vector{Float64}, typeof(opc), Vector{Float64}); target_modules = (SimpleSplines,))))
