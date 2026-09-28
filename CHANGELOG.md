@@ -16,6 +16,12 @@ global seed; the shared mesh collection moved to `test/helpers/meshes.jl`. A new
 `test/quality/doctests.jl` runs docstring doctests via `doctest(SimpleSplines; manual = false)`
 in the slow group.
 
+A new `test/quality/jet.jl` runs static optimisation analysis with `JET.report_opt` on the hot
+paths that are tested for allocations, using the concrete argument types the tests pass. Dispatch
+issues that allocation tests alone cannot identify are caught here. The analysis runs where JET is
+available; on other Julia versions the test skips. JET is added to `test/Project.toml` with no
+compat bound.
+
 ## [0.3.0] — 2026-09-20
 
 ### New Features
