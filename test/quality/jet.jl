@@ -1,0 +1,57 @@
+using JET
+using SimpleSplines
+using Test
+
+# Static optimisation analysis of the hot paths: every function of `src/` that a test file
+# asserts with `@allocated`, at the concrete argument types those tests pass. A runtime
+# dispatch on one of these paths is what the allocation tests measure only indirectly.
+
+if isdefined(JET, :JET_AVAILABLE) ? JET.JET_AVAILABLE : JET.JET_LOADABLE
+    # test/basis.jl: evaluate_all! on a free, a Dirichlet and a periodic bounded basis
+    b = BSplineBasis(UniformMesh(32, -10 .. 10), 3)
+    br = BSplineBasis(UniformMesh(32, -10 .. 10), 3, Dirichlet())
+    bp = BSplineBasis(UniformMesh(32, 0 .. 2π), 3, Periodic())
+    @test isempty(JET.get_reports(JET.report_opt(evaluate_all!,
+        (Vector{Float64}, typeof(b), Float64, Int); target_modules = (SimpleSplines,))))
+    @test isempty(JET.get_reports(JET.report_opt(evaluate_all!,
+        (Vector{Float64}, typeof(br), Float64, Int); target_modules = (SimpleSplines,))))
+    @test isempty(JET.get_reports(JET.report_opt(evaluate_all!,
+        (Vector{Float64}, typeof(bp), Float64, Int); target_modules = (SimpleSplines,))))
+
+    # test/tensorproduct.jl: evaluate on a tensor product of mixed axis types
+    B = TensorProductBasis(
+        BSplineBasis(UniformMesh(5, 0 .. 1), 1),
+        BSplineBasis(UniformMesh(4, -1 .. 1), 2, Periodic()),
+        BSplineBasis(UniformMesh(6, 2 .. 5), 3, Dirichlet()))
+    @test isempty(JET.get_reports(JET.report_opt(evaluate,
+        (typeof(B), Array{Float64, 3}, NTuple{3, Float64});
+        target_modules = (SimpleSplines,))))
+
+    # test/quadrature.jl: basis_integrals and l2_projection! on a uniform periodic basis
+    q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(16), 3))
+    @test isempty(JET.get_reports(JET.report_opt(basis_integrals, (typeof(q),);
+        target_modules = (SimpleSplines,))))
+    q2 = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(32, 2π), 3))
+    @test isempty(JET.get_reports(JET.report_opt(l2_projection!,
+        (Vector{Float64}, typeof(q2), Vector{Float64}); target_modules = (SimpleSplines,))))
+
+    # test/mass.jl: mass_solve! on the circulant operators, deflated and not
+    bu = PeriodicBSplineBasis(UniformMesh(32, 2π), 3)
+    opd = mass_operator(stiffness_matrix(SplineQuadrature(bu)), bu; kernel = :project)
+    @test isempty(JET.get_reports(JET.report_opt(mass_solve!,
+        (Vector{Float64}, typeof(opd), Vector{Float64}); target_modules = (SimpleSplines,))))
+    opc = mass_operator(q2)
+    @test isempty(JET.get_reports(JET.report_opt(mass_solve!,
+        (Vector{Float64}, typeof(opc), Vector{Float64}); target_modules = (SimpleSplines,))))
+
+    # test/mass.jl: mass_solve! on each banded operator type that the banded testset builds
+    banded = unique(typeof(mass_operator(SplineQuadrature(BSplineBasis(m, p, bc))))
+    for p in 1:4, bc in (Free(), Dirichlet(), Neumann(), Robin(1.0, 2.0)),
+    m in (UniformMesh(24, 0 .. 1), GradedMesh(24, 0 .. 1), RandomMesh(24, 0 .. 1)))
+    @testset "$T" for T in banded
+        @test isempty(JET.get_reports(JET.report_opt(mass_solve!,
+            (Vector{Float64}, T, Vector{Float64}); target_modules = (SimpleSplines,))))
+    end
+else
+    @test_skip "JET does not work on this Julia version"  # aviatesk/JET.jl#681
+end
