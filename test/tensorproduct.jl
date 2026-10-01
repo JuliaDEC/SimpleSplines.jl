@@ -284,7 +284,6 @@ Random.seed!(0x2f7a91c4)
 
         # the same projection, assembled entry by entry from the one-dimensional tables
         q1, q2 = quadratures(q)
-        x1, x2 = quadrature_nodes(q), quadrature_weights(q)
         X1, X2 = quadrature_nodes(q)
         W1, W2 = quadrature_weights(q)
         Φ1, Φ2 = basis_values(q1, 0), basis_values(q2, 0)
