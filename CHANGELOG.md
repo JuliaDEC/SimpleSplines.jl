@@ -22,6 +22,9 @@ issues that allocation tests alone cannot identify are caught here. The analysis
 available; on other Julia versions the test skips. JET is added to `test/Project.toml` with no
 compat bound.
 
+An unused binding goes out of `test/tensorproduct.jl`, as fatou 0.22.0 reports it; no source file
+changes.
+
 ## [0.3.0] — 2026-09-20
 
 ### New Features
