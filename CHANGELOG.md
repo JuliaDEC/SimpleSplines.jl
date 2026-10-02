@@ -7,7 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Changed
+### Bug Fixes
 
 The floors rise to Julia 1.11, GeometricBase 0.15.0, CompactBasisFunctions 0.4.2 and
 QuadratureRules 0.2.2, because GeometricBase 0.15 declares its stubs public and requires Julia
