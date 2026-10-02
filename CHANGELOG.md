@@ -25,6 +25,12 @@ compat bound.
 An unused binding goes out of `test/tensorproduct.jl`, as fatou 0.22.0 reports it; no source file
 changes.
 
+### Bug Fixes
+
+The floors rise to Julia 1.11, GeometricBase 0.15.0, CompactBasisFunctions 0.4.2 and
+QuadratureRules 0.2.2, because GeometricBase 0.15 declares its stubs public and requires Julia
+1.11.
+
 ## [0.3.0] — 2026-09-20
 
 ### New Features

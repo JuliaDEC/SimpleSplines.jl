@@ -249,8 +249,6 @@ Random.seed!(0x2f7a91c4)
 
         # the keyword is a literal at the call site, so it must constant-propagate into a
         # concrete type -- a two-way Union here propagates into every consumer downstream.
-        # Written as a function rather than a closure: a closure over a local infers as Any
-        # on the 1.10 compat floor.
         project(M, b) = mass_operator(M, b; kernel = :project)
         @test @inferred(project(Su, bu)) isa CirculantMass
         @test @inferred(project(Sg, bg)) isa FactorizedMass
