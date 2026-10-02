@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+The floors rise to Julia 1.11, GeometricBase 0.15.0, CompactBasisFunctions 0.4.2 and
+QuadratureRules 0.2.2, because GeometricBase 0.15 declares its stubs public and requires Julia
+1.11. In the root `Project.toml`, `julia` becomes `"1.11"`, `GeometricBase` becomes `"0.15.0"`,
+`CompactBasisFunctions` becomes `"0.4.2"` and `QuadratureRules` becomes `"0.2.2"`. No code changes.
+
 ### New Features
 
 The test files mirror `src/`, with one `@safetestset` per file, each running in its own module.
