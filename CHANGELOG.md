@@ -5,7 +5,7 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — targeting 0.3.2
+## [0.3.2] — 2026-10-03
 
 ### Bug Fixes
 
@@ -18,6 +18,9 @@ strided right-hand side, with FFTW's "plan applied to wrong-strides array". Both
 stage a non-contiguous argument through a buffer they own. The solve is correct for any stride,
 negative strides included, and stays allocation-free. A contiguous argument takes the same path
 as before.
+
+Because the buffer belongs to the operator, a `BandedMass` is no longer to be shared between
+threads, as was already the case for a `CirculantMass`.
 
 ## [0.3.1] — 2026-10-02
 
