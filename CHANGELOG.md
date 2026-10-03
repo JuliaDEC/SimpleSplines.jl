@@ -5,6 +5,20 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — targeting 0.3.2
+
+### Bug Fixes
+
+`mass_solve!`, `ldiv!` and `l2_projection!` on a bounded basis returned wrong values, with no
+error, when the result was a non-contiguous view such as `view(w, 1:2:2m)`. They also wrote
+into the entries of the parent array that the view skips. The cause is the LAPACK banded
+Cholesky solve behind `BandedMass`: it addresses its argument as contiguous memory, and the
+BandedMatrices wrapper does not check the stride. A `CirculantMass` refused such a view, or a
+strided right-hand side, with FFTW's "plan applied to wrong-strides array". Both operators now
+stage a non-contiguous argument through a buffer they own. The solve is correct for any stride,
+negative strides included, and stays allocation-free. A contiguous argument takes the same path
+as before.
+
 ## [0.3.1] — 2026-10-02
 
 ### New Features

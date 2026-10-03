@@ -312,6 +312,76 @@ Random.seed!(0x2f7a91c4)
         end
     end
 
+    @testset "$(rpad("a non-contiguous argument is solved, not misread",76))" begin
+        # LAPACK's banded solve and FFTW's plans address their argument as contiguous memory.
+        # A stride-2 view handed to either must still give the solution, and must leave the
+        # entries of the parent that the view skips alone. The baseline is a dense solve, not
+        # the contiguous path of the same operator.
+        n = 34
+        cases = Any[]
+        for b in (BSplineBasis(UniformMesh(n, 0 .. 1), 3, Dirichlet()),
+            BSplineBasis(GradedMesh(n, 0 .. 1), 2),
+            PeriodicBSplineBasis(UniformMesh(n, 2π), 3),
+            PeriodicBSplineBasis(GradedMesh(n, 2π), 3))
+            M = mass_matrix(SplineQuadrature(b))
+            push!(cases, (mass_operator(M, b), x -> Matrix(M) \ x))
+        end
+        for meshtype in (UniformMesh, GradedMesh)
+            b = PeriodicBSplineBasis(meshtype(n, 2π), 3)
+            S = stiffness_matrix(SplineQuadrature(b))
+            shifted = Matrix(S) .+ inv(n)
+            push!(cases, (mass_operator(S, b; kernel = :project),
+                x -> shifted \ (x .- sum(x) / n)))
+        end
+
+        sentinel = 7.0
+        function strided(v)
+            w = fill(sentinel, 2length(v))
+            w[1:2:end] .= v
+            return view(w, 1:2:length(w))
+        end
+        for (op, solve) in cases
+            N = size(op, 1)
+            x = randn(N)
+            expected = solve(x)
+
+            y = strided(zeros(N))                    # a strided result
+            @test mass_solve!(y, op, x) ≈ expected atol = 1e-10
+            @test all(==(sentinel), parent(y)[2:2:end])
+
+            y = zeros(N)                             # a strided right-hand side
+            @test mass_solve!(y, op, strided(x)) ≈ expected atol = 1e-10
+
+            z = strided(x)                           # both, aliased
+            @test mass_solve!(z, op, z) ≈ expected atol = 1e-10
+            @test all(==(sentinel), parent(z)[2:2:end])
+
+            r = zeros(N)                             # a negative stride
+            @test mass_solve!(view(r, N:-1:1), op, x) ≈ expected atol = 1e-10
+
+            # a complex strided result of a real banded operator, which LAPACK never sees
+            if op isa BandedMass
+                xc = randn(ComplexF64, N)
+                yc = view(fill(complex(sentinel), 2N), 1:2:(2N))
+                @test mass_solve!(yc, op, xc) ≈ solve(xc) atol = 1e-10
+                @test all(==(sentinel), parent(yc)[2:2:end])
+            end
+
+            # the banded and circulant solves stage a strided argument through a buffer the
+            # operator owns, so they stay allocation-free on it
+            if !(op isa FactorizedMass)
+                y = strided(zeros(N))
+                mass_solve!(y, op, x)
+                @test (@allocated mass_solve!(y, op, x)) == 0
+
+                # a strided argument of the wrong length is refused, not truncated
+                @test_throws DimensionMismatch mass_solve!(strided(zeros(N + 1)), op, x)
+                @test_throws DimensionMismatch mass_solve!(strided(zeros(N)), op,
+                    strided(x[1:(N - 1)]))
+            end
+        end
+    end
+
     @testset "$(rpad("accessors and errors",76))" begin
         q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(16, 2π), 3))
         op = mass_operator(q)

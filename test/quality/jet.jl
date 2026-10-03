@@ -62,6 +62,14 @@ if isdefined(JET, :JET_AVAILABLE) ? JET.JET_AVAILABLE : JET.JET_LOADABLE
         @test isempty(JET.get_reports(JET.report_opt(mass_solve!,
             (Vector{Float64}, T, Vector{Float64}); target_modules = (SimpleSplines,))))
     end
+
+    # test/mass.jl: mass_solve! into a stride-2 view, on a banded and a circulant operator
+    S2 = typeof(view(zeros(4), 1:2:4))
+    opb = mass_operator(SplineQuadrature(BSplineBasis(UniformMesh(34, 0 .. 1), 3, Dirichlet())))
+    @test isempty(JET.get_reports(JET.report_opt(mass_solve!,
+        (S2, typeof(opb), Vector{Float64}); target_modules = (SimpleSplines,))))
+    @test isempty(JET.get_reports(JET.report_opt(mass_solve!,
+        (S2, typeof(opc), Vector{Float64}); target_modules = (SimpleSplines,))))
 else
     @test_skip "JET does not work on this Julia version"  # aviatesk/JET.jl#681
 end

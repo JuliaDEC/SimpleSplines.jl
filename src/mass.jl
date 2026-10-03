@@ -157,11 +157,15 @@ CHOLMOD, the factor answers `ldiv!` **in place**: a solve allocates nothing at a
 what makes [`l2_projection!`](@ref) allocation-free on every bounded basis rather than only on
 the uniform periodic one.
 
+A non-contiguous argument, which LAPACK cannot address, is staged through a buffer the
+operator owns, so one operator is not to be shared between threads.
+
 [`FactorizedMass`](@ref) remains for the periodic non-uniform case, where the matrix wraps.
 """
 struct BandedMass{T, MT, FT} <: MassOperator{T}
     M::MT
     fact::FT
+    buf::Vector{T}
 
     function BandedMass(M::MT) where {T, MT <: AbstractMatrix{T}}
         kd = _bandwidth(M)
@@ -170,7 +174,7 @@ struct BandedMass{T, MT, FT} <: MassOperator{T}
         issuccess(F) || throw(ArgumentError(
             "the mass matrix is not positive definite; the quadrature is too coarse to " *
             "resolve the basis"))
-        new{T, MT, typeof(F)}(M, F)
+        new{T, MT, typeof(F)}(M, F, Vector{T}(undef, size(M, 1)))
     end
 end
 
@@ -300,6 +304,7 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
     plan::PT
     iplan::IT
     buf::Vector{Complex{T}}
+    rbuf::Vector{T}
     n::Int
 
     function CirculantMass(M::MT, n::Integer; rtol = sqrt(eps(T)),
@@ -314,10 +319,11 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
         # much later as a wrong conservation law.
         _check_circulant(M, c, Int(n), rtol)
 
-        # The plans are made UNALIGNED so that they accept any strided argument -- a view
+        # The plans are made UNALIGNED so that they accept any contiguous argument -- a view
         # into a column of a matrix, in particular, whose alignment an aligned plan would
         # reject at run time. At these sizes the difference is not measurable, and the
-        # alternative is a plan that works everywhere except where it is passed a view.
+        # alternative is a plan that works everywhere except where it is passed a view. An
+        # argument of any other stride goes through `rbuf`; see `mass_solve!`.
         #
         # ESTIMATE has to be given explicitly alongside it. Passing UNALIGNED alone replaces
         # the flags rather than adding to them, and FFTW's default rigor then measures --
@@ -329,7 +335,8 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
         iplan = plan_irfft(buf, n; flags = FFTW.ESTIMATE | FFTW.UNALIGNED)
         ĉ⁻¹ = _reciprocal_eigenvalues(plan * c, Int(n), kernel)
 
-        new{T, MT, typeof(plan), typeof(iplan)}(M, ĉ⁻¹, plan, iplan, buf, Int(n))
+        new{T, MT, typeof(plan), typeof(iplan)}(M, ĉ⁻¹, plan, iplan, buf,
+            Vector{T}(undef, n), Int(n))
     end
 end
 
@@ -473,17 +480,41 @@ function mass_solve!(y::AbstractVector, op::FactorizedMass{T, MT, FT, :project},
     return y
 end
 
-# The banded factor does implement an in-place `ldiv!`, so this path allocates nothing.
-function mass_solve!(y::AbstractVector, op::BandedMass, x::AbstractVector)
-    y === x || copyto!(y, x)
-    ldiv!(op.fact, y)
+# LAPACK's banded solve and FFTW's plans address their argument as contiguous memory. FFTW
+# refuses any other stride; the banded LAPACK wrapper does not check, so a stride-2 view
+# returns wrong values and writes into the parent entries the view skips. A non-contiguous
+# argument therefore goes through a buffer the operator owns, which keeps both solves
+# allocation-free on it, and a contiguous one goes straight through.
+_contiguous(v::StridedVector) = stride(v, 1) == 1
+_contiguous(::AbstractVector) = false
+
+# The banded factor does implement an in-place `ldiv!`, so this path allocates nothing. Only a
+# result of the factor's own element type reaches LAPACK; any other one takes the generic
+# triangular solve, which handles any stride and which the real buffer could not hold.
+function mass_solve!(y::AbstractVector, op::BandedMass{T}, x::AbstractVector) where {T}
+    if _contiguous(y) || eltype(y) !== T
+        y === x || copyto!(y, x)
+        ldiv!(op.fact, y)
+    else
+        op.buf .= x
+        y .= ldiv!(op.fact, op.buf)
+    end
     return y
 end
 
 function mass_solve!(y::AbstractVector, op::CirculantMass, x::AbstractVector)
-    mul!(op.buf, op.plan, x)
+    if _contiguous(x)
+        mul!(op.buf, op.plan, x)
+    else
+        op.rbuf .= x
+        mul!(op.buf, op.plan, op.rbuf)
+    end
     op.buf .*= op.ĉ⁻¹
-    mul!(y, op.iplan, op.buf)
+    if _contiguous(y)
+        mul!(y, op.iplan, op.buf)
+    else
+        y .= mul!(op.rbuf, op.iplan, op.buf)
+    end
     return y
 end
 
