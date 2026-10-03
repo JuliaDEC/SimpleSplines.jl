@@ -157,6 +157,9 @@ CHOLMOD, the factor answers `ldiv!` **in place**: a solve allocates nothing at a
 what makes [`l2_projection!`](@ref) allocation-free on every bounded basis rather than only on
 the uniform periodic one.
 
+A non-contiguous argument, which LAPACK cannot address, is staged through a buffer the
+operator owns, so one operator is not to be shared between threads.
+
 [`FactorizedMass`](@ref) remains for the periodic non-uniform case, where the matrix wraps.
 """
 struct BandedMass{T, MT, FT} <: MassOperator{T}
