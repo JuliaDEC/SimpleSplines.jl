@@ -365,6 +365,11 @@ Random.seed!(0x2f7a91c4)
                 y = strided(zeros(N))
                 mass_solve!(y, op, x)
                 @test (@allocated mass_solve!(y, op, x)) == 0
+
+                # a strided argument of the wrong length is refused, not truncated
+                @test_throws DimensionMismatch mass_solve!(strided(zeros(N + 1)), op, x)
+                @test_throws DimensionMismatch mass_solve!(strided(zeros(N)), op,
+                    strided(x[1:(N - 1)]))
             end
         end
     end

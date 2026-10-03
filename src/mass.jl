@@ -318,8 +318,9 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
 
         # The plans are made UNALIGNED so that they accept any contiguous argument -- a view
         # into a column of a matrix, in particular, whose alignment an aligned plan would
-        # reject at run time. Other strides go through `rbuf`; see `mass_solve!`. At these sizes the difference is not measurable, and the
-        # alternative is a plan that works everywhere except where it is passed a view.
+        # reject at run time. At these sizes the difference is not measurable, and the
+        # alternative is a plan that works everywhere except where it is passed a view. An
+        # argument of any other stride goes through `rbuf`; see `mass_solve!`.
         #
         # ESTIMATE has to be given explicitly alongside it. Passing UNALIGNED alone replaces
         # the flags rather than adding to them, and FFTW's default rigor then measures --
@@ -490,7 +491,8 @@ function mass_solve!(y::AbstractVector, op::BandedMass, x::AbstractVector)
         y === x || copyto!(y, x)
         ldiv!(op.fact, y)
     else
-        copyto!(y, ldiv!(op.fact, copyto!(op.buf, x)))
+        op.buf .= x
+        y .= ldiv!(op.fact, op.buf)
     end
     return y
 end
@@ -499,13 +501,14 @@ function mass_solve!(y::AbstractVector, op::CirculantMass, x::AbstractVector)
     if _contiguous(x)
         mul!(op.buf, op.plan, x)
     else
-        mul!(op.buf, op.plan, copyto!(op.rbuf, x))
+        op.rbuf .= x
+        mul!(op.buf, op.plan, op.rbuf)
     end
     op.buf .*= op.ĉ⁻¹
     if _contiguous(y)
         mul!(y, op.iplan, op.buf)
     else
-        copyto!(y, mul!(op.rbuf, op.iplan, op.buf))
+        y .= mul!(op.rbuf, op.iplan, op.buf)
     end
     return y
 end
