@@ -403,12 +403,11 @@ end
 # is viewed as (before, N_k, after) and each fibre along the middle index is solved on its own.
 #
 # The fibre is copied into a contiguous buffer rather than passed as a view. A view into the
-# middle index of a three-way reshape has stride `before`, and an FFTW plan encodes the strides
-# of the array it was planned for, not merely its alignment -- so the plan behind a
-# `CirculantMass` rejects such a fibre outright with "plan applied to wrong-strides array".
-# Creating the plans UNALIGNED, which is what lets them accept a *contiguous* column view,
-# does not help here. The two buffers are allocated once per axis and reused across that
-# axis's fibres, so the cost is O(D) buffers per call rather than one pair per fibre.
+# middle index of a three-way reshape has stride `before`, and an FFTW plan or a LAPACK banded
+# solve addresses only contiguous memory -- so the one-dimensional solve would stage such a
+# fibre through its own buffer in any case. The two buffers here are allocated once per axis
+# and reused across that axis's fibres, so the cost is O(D) buffers per call rather than one
+# pair per fibre.
 #
 # This adds no shared state of its own -- both buffers are local to the call -- but that is
 # not thread safety: a `CirculantMass` holds its own scratch vector, which `mass_solve!`
