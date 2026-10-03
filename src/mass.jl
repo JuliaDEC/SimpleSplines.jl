@@ -488,9 +488,11 @@ end
 _contiguous(v::StridedVector) = stride(v, 1) == 1
 _contiguous(::AbstractVector) = false
 
-# The banded factor does implement an in-place `ldiv!`, so this path allocates nothing.
-function mass_solve!(y::AbstractVector, op::BandedMass, x::AbstractVector)
-    if _contiguous(y)
+# The banded factor does implement an in-place `ldiv!`, so this path allocates nothing. Only a
+# result of the factor's own element type reaches LAPACK; any other one takes the generic
+# triangular solve, which handles any stride and which the real buffer could not hold.
+function mass_solve!(y::AbstractVector, op::BandedMass{T}, x::AbstractVector) where {T}
+    if _contiguous(y) || eltype(y) !== T
         y === x || copyto!(y, x)
         ldiv!(op.fact, y)
     else

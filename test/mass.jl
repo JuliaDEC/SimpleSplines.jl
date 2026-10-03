@@ -359,6 +359,14 @@ Random.seed!(0x2f7a91c4)
             r = zeros(N)                             # a negative stride
             @test mass_solve!(view(r, N:-1:1), op, x) ≈ expected atol = 1e-10
 
+            # a complex strided result of a real banded operator, which LAPACK never sees
+            if op isa BandedMass
+                xc = randn(ComplexF64, N)
+                yc = view(fill(complex(sentinel), 2N), 1:2:(2N))
+                @test mass_solve!(yc, op, xc) ≈ solve(xc) atol = 1e-10
+                @test all(==(sentinel), parent(yc)[2:2:end])
+            end
+
             # the banded and circulant solves stage a strided argument through a buffer the
             # operator owns, so they stay allocation-free on it
             if !(op isa FactorizedMass)
