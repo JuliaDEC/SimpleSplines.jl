@@ -5,6 +5,13 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+CI uploads coverage from the `Julia 1 - ubuntu-latest` job instead of `Julia min`, and a test
+job saves the Julia cache only when it succeeds.
+
 ## [0.3.2] — 2026-10-03
 
 ### Bug Fixes
