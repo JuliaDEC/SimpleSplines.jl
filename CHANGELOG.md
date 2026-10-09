@@ -17,6 +17,12 @@ job saves the Julia cache only when it succeeds.
   In CI the Doctests job stays their runner, so the test matrix no longer runs them a second
   time.
 
+`test/basis.jl` moved to `test/integration/basis.jl`. The test convention keeps a test file at
+the top level of `test/` only where it mirrors `src/<name>.jl`, and there is no
+`src/basis.jl`: the file tests clamped and recombined bases across `src/bspline.jl`,
+`src/recombined.jl`, `src/boundary.jl`, `src/mesh.jl`, `src/quadrature.jl`, `src/mass.jl`,
+`src/spline.jl` and `src/tensorproduct.jl`.
+
 ## [0.3.2] — 2026-10-03
 
 ### Bug Fixes

@@ -8,7 +8,7 @@ if "core" in GROUPS
     @safetestset "Meshes" include("mesh.jl")
     @safetestset "Boundary conditions" include("boundary.jl")
     @safetestset "Periodic B-spline bases" include("bspline.jl")
-    @safetestset "Clamped and recombined bases" include("basis.jl")
+    @safetestset "Clamped and recombined bases" include("integration/basis.jl")
     @safetestset "Mass operators" include("mass.jl")
     @safetestset "Spline quadrature" include("quadrature.jl")
     @safetestset "Tensor products" include("tensorproduct.jl")
