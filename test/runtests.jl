@@ -14,6 +14,6 @@ if "core" in GROUPS
     @safetestset "Tensor products" include("tensorproduct.jl")
     @safetestset "Polar splines" include("polar.jl")
 end
-if "slow" in GROUPS
+if "doctests" in GROUPS
     @safetestset "Doctests" include("quality/doctests.jl")
 end
