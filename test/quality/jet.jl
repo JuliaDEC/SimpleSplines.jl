@@ -10,7 +10,7 @@ using Test
 # (`op \ b32` on a `CirculantMass{Float32}`, test/mass.jl) gets none.
 
 if isdefined(JET, :JET_AVAILABLE) ? JET.JET_AVAILABLE : JET.JET_LOADABLE
-    # test/basis.jl: evaluate_all! on a free and a Dirichlet bounded basis and a periodic basis
+    # test/integration/basis.jl: evaluate_all! on a free and a Dirichlet bounded basis and a periodic basis
     b = BSplineBasis(UniformMesh(32, -10 .. 10), 3)
     br = BSplineBasis(UniformMesh(32, -10 .. 10), 3, Dirichlet())
     bp = BSplineBasis(UniformMesh(32, 0 .. 2π), 3, Periodic())
@@ -29,7 +29,7 @@ if isdefined(JET, :JET_AVAILABLE) ? JET.JET_AVAILABLE : JET.JET_LOADABLE
     @test isempty(JET.get_reports(JET.report_opt(evaluate,
         (typeof(B), Array{Float64, 3}, NTuple{3, Float64});
         target_modules = (SimpleSplines,))))
-    # test/basis.jl: complex coefficients on a 2-D tensor product, with a derivative order
+    # test/integration/basis.jl: complex coefficients on a 2-D tensor product, with a derivative order
     B2 = BSplineBasis(UniformMesh(6, 0 .. 1), 3) ⊗ BSplineBasis(UniformMesh(5, 0 .. 1), 3)
     @test isempty(JET.get_reports(JET.report_opt(evaluate,
         (typeof(B2), Matrix{ComplexF64}, NTuple{2, Float64}, NTuple{2, Int});
