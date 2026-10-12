@@ -23,6 +23,11 @@ the top level of `test/` only where it mirrors `src/<name>.jl`, and there is no
 `src/recombined.jl`, `src/boundary.jl`, `src/mesh.jl`, `src/quadrature.jl`, `src/mass.jl`,
 `src/spline.jl` and `src/tensorproduct.jl`.
 
+- `[compat] CairoMakie` in the docs environment is `"0.15"`, narrowed from
+  `"0.12, 0.13, 0.14, 0.15"`. Only 0.15 is tested, and CairoMakie 0.12 fails to precompile on
+  Julia 1.13, so the wider range claimed support that does not hold. The package itself does not
+  depend on CairoMakie; only its documentation build does.
+
 ## [0.3.2] — 2026-10-03
 
 ### Bug Fixes
