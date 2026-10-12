@@ -11,6 +11,6 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SimpleSplines = {path = ".."}
 
 [compat]
-CairoMakie = "0.12, 0.13, 0.14, 0.15"
+CairoMakie = "0.15"
 Documenter = "1"
 DocumenterCitations = "1"
