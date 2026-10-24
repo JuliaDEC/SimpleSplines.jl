@@ -28,6 +28,11 @@ the top level of `test/` only where it mirrors `src/<name>.jl`, and there is no
   Julia 1.13, so the wider range claimed support that does not hold. The package itself does not
   depend on CairoMakie; only its documentation build does.
 
+- **Julia 1.12 is the floor** (`[compat] julia = "1.12"`, from 1.11). A breaking change under
+  this package's pre-1.0 convention: a caller on Julia 1.11 can no longer install this version.
+  Nothing in the package's code changes: it had no code that branched on the Julia version, and
+  the repository records no reason for the new floor beyond the raised compat bound.
+
 ## [0.3.2] — 2026-10-03
 
 ### Bug Fixes
