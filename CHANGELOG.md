@@ -33,6 +33,12 @@ the top level of `test/` only where it mirrors `src/<name>.jl`, and there is no
   Nothing in the package's code changes: it had no code that branched on the Julia version, and
   the repository records no reason for the new floor beyond the raised compat bound.
 
+- **Three `[compat]` lower bounds rise to the lowest versions that resolve together.** `FFTW`
+  from `"1"` to `"1.3.1"`, `ContinuumArrays` from `"0.18, 0.19, 0.20, 0.21"` to `"0.20.5, 0.21"`
+  and `BandedMatrices` from `"1"` to `"1.7.6"`. The `Downgrade` job resolves every lower bound at
+  once and named these three as unreachable at their old values. It failed the same way on `main`
+  before the raise, so the bounds were already false.
+
 ## [0.3.2] — 2026-10-03
 
 ### Bug Fixes
