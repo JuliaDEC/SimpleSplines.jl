@@ -1,5 +1,8 @@
 using SimpleSplines
+using Random
 using Test
+
+include("helpers/meshes.jl")
 
 @testset "$(rpad("Mesh Tests",80))" begin
     L = 2π
@@ -90,6 +93,33 @@ using Test
         @test_throws ArgumentError GeneralMesh([0.0, 1.0, 1.0])      # repeated
         @test_throws ArgumentError GeneralMesh([0.0, 2.0, 1.0])      # not increasing
         @test_throws ArgumentError GeneralMesh([0.0, Inf])
+    end
+
+    @testset "$(rpad("end breakpoints are exactly a and b",76))" begin
+        # a + (b - a) * n / n rounds to 2.1570321732324693 here, and every basis function on
+        # the mesh then vanishes at b
+        a, b = 0.41192477391208715, 2.1570321732324698
+        @test first(breakpoints(UniformMesh(11, a .. b))) == a
+        @test last(breakpoints(UniformMesh(11, a .. b))) == b
+
+        # The ends are set, not computed, so any span on any family must give them exactly;
+        # each entry of `bad` is a span on which one did not.
+        for T in (Float64, Float32)
+            rng = Xoshiro(0x5a1e)
+            bad = []
+            for _ in 1:2000
+                a, b = random_span(rng, T)
+                n = rand(rng, 1:64)
+                for m in (UniformMesh{T}(n, a .. b), GradedMesh{T}(n, a .. b),
+                    RandomMesh{T}(n, a .. b; seed = rand(rng, 1:1000)))
+                    y = breakpoints(m)
+                    ok = length(y) == n + 1 && first(y) == a && last(y) == b &&
+                         all(>(0), diff(y))
+                    ok || push!(bad, (typeof(m), a, b, n))
+                end
+            end
+            @test isempty(bad)
+        end
     end
 
     @testset "$(rpad("invalid arguments",76))" begin

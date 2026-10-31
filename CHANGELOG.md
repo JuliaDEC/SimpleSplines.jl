@@ -5,6 +5,28 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Bug Fixes
+
+A clamped `BSplineBasis` on a `UniformMesh` or a `GradedMesh` could vanish at the right
+endpoint `b`, with no error. Both meshes computed their last breakpoint as `a + (b - a) * 1`,
+which does not round back to `b` on some spans: on `UniformMesh(11, 0.41192477391208715 ..
+2.1570321732324698)` it is `2.1570321732324693`. The knot vector then ended short of `b`, so
+every basis function was zero there, and a Newton solve that evaluates the basis at `b` saw a
+singular matrix. Over random spans this hit 7 % of the `Float64` and 10 % of the `Float32`
+uniform bases. Both meshes now set the end breakpoints to `a` and `b` exactly; `RandomMesh`
+already did.
+
+`nodes` of a clamped basis could round outside `[a, b]`: the Greville average of `p` equal end
+knots need not round back to that knot. The first and last node are now exactly `a` and `b` for
+`p ≥ 1`, and every node lies in `[a, b]`.
+
+Only values next to the ends change: the last breakpoint and the `p + 1` end knots of a uniform
+or graded mesh, the nodes that average an end knot, and through them the basis on the last cell
+and the matrices assembled from it, periodic ones included. Over 1000 random spans per mesh
+family and element type, each breakpoint and node changes by at most 3 `eps(max(|a|, |b|))`.
+
 ## [0.3.3] — 2026-10-24
 
 ### Changed

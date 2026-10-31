@@ -187,3 +187,47 @@ include("helpers/meshes.jl")
         @test !isapprox(b1, b3)
     end
 end
+
+@testset "$(rpad("Span End Tests",80))" begin
+    @testset "$(rpad("clamped: regression, the basis vanished at b",76))" begin
+        # the last breakpoint of this mesh rounded to 2.1570321732324693, so the knot vector
+        # ended short of b and every basis function was zero there
+        a, b = 0.41192477391208715, 2.1570321732324698
+        B = BSplineBasis(UniformMesh(11, a .. b), 3)
+        @test first(knotvector(B)) == a
+        @test last(knotvector(B)) == b
+        @test B[b, nbasis(B)] ≈ 1
+        @test sum(B[b, j] for j in eachindex(B)) ≈ 1
+        @test first(nodes(B)) == a
+        @test last(nodes(B)) == b
+    end
+
+    @testset "$(rpad("clamped: nodes and the value at b on random spans",76))" begin
+        # Each entry of `bad` is a span on which a clamped basis failed one of: every node in
+        # [a, b] and in order; the first and last node exactly a and b (p ≥ 1, where they are
+        # the Greville averages of the p-fold end knots); a partition of unity at b, through
+        # both `evaluate` and `evaluate_all`, to 8 eps.
+        for T in (Float64, Float32)
+            tol = 8 * eps(T)
+            rng = Xoshiro(0xb5e1)
+            bad = []
+            for _ in 1:2000
+                a, b = random_span(rng, T)
+                n = rand(rng, 1:32)
+                p = rand(rng, 0:5)
+                for m in (UniformMesh{T}(n, a .. b), GradedMesh{T}(n, a .. b),
+                    RandomMesh{T}(n, a .. b; seed = rand(rng, 1:1000)))
+                    B = BSplineBasis(m, p)
+                    ξ = nodes(B)
+                    ok = all(x -> a ≤ x ≤ b, ξ) && issorted(ξ)
+                    ok &= p == 0 || (first(ξ) == a && last(ξ) == b)
+                    φ = B[b, :]
+                    ok &= any(!iszero, φ) && abs(sum(φ) - 1) ≤ tol
+                    ok &= abs(sum(last(evaluate_all(B, b))) - 1) ≤ tol
+                    ok || push!(bad, (typeof(m), a, b, n, p))
+                end
+            end
+            @test isempty(bad)
+        end
+    end
+end

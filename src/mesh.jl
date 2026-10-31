@@ -200,7 +200,11 @@ UniformMesh(n::Integer, domain) = UniformMesh{_domaintype(domain)}(n, domain)
 UniformMesh(n::Integer) = UniformMesh(n, 2convert(Float64, π))
 
 function breakpoints(m::UniformMesh{T}) where {T}
-    T[m.a + (m.b - m.a) * (i - 1) / m.n for i in 1:(m.n + 1)]
+    y = T[m.a + (m.b - m.a) * (i - 1) / m.n for i in 1:(m.n + 1)]
+    # The ends are set rather than computed: a + (b - a) * n / n is not b on a few per cent of
+    # spans, and a knot vector that ends short of b gives a basis that vanishes there.
+    y[begin], y[end] = m.a, m.b
+    return y
 end
 
 meshwidth(m::UniformMesh) = (m.b - m.a) / m.n
@@ -258,8 +262,12 @@ GradedMesh(n::Integer; kwargs...) = GradedMesh(n, 2convert(Float64, π); kwargs.
 
 function _graded_breakpoints(::Type{T}, n::Integer, a::T, b::T, α::T) where {T}
     L = b - a
-    [a + L * (s + α * sinpi(2s) / (2convert(T, π)))
-     for s in (T(i - 1) / n for i in 1:(n + 1))]
+    y = [a + L * (s + α * sinpi(2s) / (2convert(T, π)))
+         for s in (T(i - 1) / n for i in 1:(n + 1))]
+    # The map fixes both ends, but a + (b - a) need not round back to b; set them, as
+    # `breakpoints(::UniformMesh)` does.
+    y[begin], y[end] = a, b
+    return y
 end
 
 breakpoints(m::GradedMesh) = m.y
