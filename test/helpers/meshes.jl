@@ -5,7 +5,7 @@ const MESHES = ((:uniform, n -> UniformMesh(n, 2π)),
 
 # A span [a, b] with independently drawn endpoints, so that b - a is in general inexact and
 # a + (b - a) need not round back to b. Drawing b as a + w would not do: for |w| ≤ |a| the
-# difference of the rounded sum and a is exact, and the end would always come back.
+# difference of the rounded sum and a is exact, and a + (b - a) always gives back b.
 function random_span(rng, ::Type{T}) where {T}
     c = ldexp(2rand(rng) - 1, rand(rng, -3:6))
     w = ldexp(0.1 + rand(rng), rand(rng, -3:4))

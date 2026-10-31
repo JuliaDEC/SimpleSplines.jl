@@ -10,17 +10,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Bug Fixes
 
 A clamped `BSplineBasis` on a `UniformMesh` or a `GradedMesh` could vanish at the right
-endpoint `b`, with no error. Both meshes computed their last breakpoint as `a + (b - a) * 1`,
-which does not round back to `b` on some spans: on `UniformMesh(11, 0.41192477391208715 ..
-2.1570321732324698)` it is `2.1570321732324693`. The knot vector then ended short of `b`, so
-every basis function was zero there, and a Newton solve that evaluates the basis at `b` saw a
-singular matrix. Over random spans this hit 7 % of the `Float64` and 10 % of the `Float32`
-uniform bases. Both meshes now set the end breakpoints to `a` and `b` exactly; `RandomMesh`
-already did.
+endpoint `b`, with no error. `GradedMesh` computed its last breakpoint as `a + (b - a) * 1`, and
+`UniformMesh` as `a + (b - a) * n / n`, which does not round back to `b` on some spans: on
+`UniformMesh(11, 0.41192477391208715 .. 2.1570321732324698)` it is `2.1570321732324693`. The knot
+vector then ended short of `b`, so every basis function was zero there, and a Newton solve that
+evaluates the basis at `b` saw a singular matrix. Both meshes now set the end breakpoints to `a`
+and `b` exactly; `RandomMesh` already did.
 
 `nodes` of a clamped basis could round outside `[a, b]`: the Greville average of `p` equal end
-knots need not round back to that knot. The first and last node are now exactly `a` and `b` for
-`p ≥ 1`, and every node lies in `[a, b]`.
+knots need not round back to that knot. For `p ≥ 1`, the first and last node are now exactly
+`a` and `b`, and every node lies in `[a, b]`.
 
 Only values next to the ends change: the last breakpoint and the `p + 1` end knots of a uniform
 or graded mesh, the nodes that average an end knot, and through them the basis on the last cell
