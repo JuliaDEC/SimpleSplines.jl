@@ -392,12 +392,19 @@ the averages of the `p` interior knots of each basis function.
 
 These are the points a spline basis is naturally interpolated at: ``\xi_j`` lies in the
 support of ``\phi_j`` and the collocation matrix ``\phi_j(\xi_i)`` is invertible
-(Schoenberg-Whitney). For a clamped basis ``\xi_1 = a`` and ``\xi_N = b``.
+(Schoenberg-Whitney). For a clamped basis of degree ``p \ge 1``, ``\xi_1 = a`` and
+``\xi_N = b`` exactly, and every node lies in ``[a,b]``. For ``p = 0`` the nodes are the cell
+midpoints.
 """
 function nodes(b::BSplineBasis{T}) where {T}
     p = b.p
     p == 0 && return T[(b.knots[j] + b.knots[j + 1]) / 2 for j in 1:nbasis(b)]
-    T[sum(b.knots[j + i] for i in 1:p) / p for j in 1:nbasis(b)]
+    x₁, x₂ = b.knots[begin], b.knots[end]
+    # The average of p equal knots need not round back to that knot, and an average next to
+    # an end can round past it; the ends are therefore set, and the rest clamped to [a, b].
+    ξ = T[clamp(sum(b.knots[j + i] for i in 1:p) / p, x₁, x₂) for j in 1:nbasis(b)]
+    ξ[begin], ξ[end] = x₁, x₂
+    return ξ
 end
 
 ## ---------------------------------------------------------------------------------------
