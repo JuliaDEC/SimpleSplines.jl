@@ -189,9 +189,9 @@ include("helpers/meshes.jl")
 end
 
 @testset "$(rpad("Span End Tests",80))" begin
-    @testset "$(rpad("clamped: regression, the basis vanished at b",76))" begin
-        # the last breakpoint of this mesh rounded to 2.1570321732324693, so the knot vector
-        # ended short of b and every basis function was zero there
+    @testset "$(rpad("clamped: the basis does not vanish at b",76))" begin
+        # a + (b - a) * n / n rounds to 2.1570321732324693 here; a knot vector that ends
+        # there falls short of b, and every basis function then vanishes at b
         a, b = 0.41192477391208715, 2.1570321732324698
         B = BSplineBasis(UniformMesh(11, a .. b), 3)
         @test first(knotvector(B)) == a

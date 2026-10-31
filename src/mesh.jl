@@ -201,8 +201,8 @@ UniformMesh(n::Integer) = UniformMesh(n, 2convert(Float64, π))
 
 function breakpoints(m::UniformMesh{T}) where {T}
     y = T[m.a + (m.b - m.a) * (i - 1) / m.n for i in 1:(m.n + 1)]
-    # The ends are set rather than computed: a + (b - a) * n / n is not b on a few per cent of
-    # spans, and a knot vector that ends short of b gives a basis that vanishes there.
+    # The ends are set rather than computed: a + (b - a) * n / n need not round back to b, and
+    # a knot vector that ends short of b gives a basis that vanishes there.
     y[begin], y[end] = m.a, m.b
     return y
 end
