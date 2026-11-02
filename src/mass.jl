@@ -330,9 +330,17 @@ struct CirculantMass{T, MT, PT, IT} <: MassOperator{T}
         # which OVERWRITES the array being planned for. That destroys `c` before the line
         # below reads it, and the symptom is a mass matrix that appears singular at some
         # sizes and not others.
+        #
+        # The forward plan is FFTW's method, called by `invoke`. Another package that defines
+        # `plan_rfft(::AbstractArray{<:Real}, ::RegionTypes)`, as FFTA does from 0.3.2, makes
+        # the plain call ambiguous whenever both are loaded. The inverse comes from the plan
+        # itself, through FFTW's `plan_inv`, so it never reaches the generic `plan_brfft`
+        # that the same package makes ambiguous; it keeps the flags and adds PRESERVE_INPUT,
+        # as FFTW's own `plan_irfft` does.
         buf = Vector{Complex{T}}(undef, n ÷ 2 + 1)
-        plan = plan_rfft(c; flags = FFTW.ESTIMATE | FFTW.UNALIGNED)
-        iplan = plan_irfft(buf, n; flags = FFTW.ESTIMATE | FFTW.UNALIGNED)
+        plan = invoke(plan_rfft, Tuple{StridedArray{T}, Any}, c, (1,);
+            flags = FFTW.ESTIMATE | FFTW.UNALIGNED)
+        iplan = inv(plan)
         ĉ⁻¹ = _reciprocal_eigenvalues(plan * c, Int(n), kernel)
 
         new{T, MT, typeof(plan), typeof(iplan)}(M, ĉ⁻¹, plan, iplan, buf,
