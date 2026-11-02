@@ -5,7 +5,7 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] — targeting 0.3.5
 
 ### Changed
 
@@ -18,6 +18,16 @@ on Julia 1.12:
   the oldest release that installs, and 0.10.0 is the first release for Julia 1.12.
 - `Aqua` 0.8 → 0.8.14: 0.8.13 and earlier read the `mt` field of `Core.TypeName`, which Julia
   1.12 does not have, so the piracy test errors.
+
+### Bug Fixes
+
+`mass_operator` of a periodic basis on a `UniformMesh`, and `CirculantMass` itself, raised
+`MethodError: … plan_rfft … is ambiguous` whenever FFTA 0.3.2 or later was loaded beside FFTW.
+FFTA comes in with Makie, so every environment that plots with CairoMakie hit it. FFTA adds
+`plan_rfft` and `plan_brfft` methods for any real or complex array that are neither more nor less
+specific than FFTW's. `CirculantMass` now calls FFTW's `plan_rfft` method by `invoke`, and takes the
+inverse plan from the forward one with `inv`, which FFTW implements for its own plans. The plans
+have the same flags as before, and the solve gives the same values.
 
 ## [0.3.4] — 2026-10-31
 
