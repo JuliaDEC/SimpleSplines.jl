@@ -34,11 +34,11 @@ cells. Each pair is `Float64` / `Float32`.
 The solve along the axes of a `KroneckerMass` and the contraction along the axes of `contract`
 are unrolled over the tuple of axes, so an operator or a quadrature whose axes have different
 types no longer dispatches dynamically: that is the drop of the three-argument `mass_solve!` on
-the periodic × clamped basis. The allocating `contract` and `l2_projection!`
-allocate more than before, because each builds two buffers of the largest intermediate array,
-and `l2_projection!` also the buffers of the mass solve. `mass_solve!` on a `KroneckerMass`
-checks the length of `y` before it copies `x`, and raises a `DimensionMismatch` for a `y` of the
-wrong length. Where the element types of the arguments are equal, the results of the allocating
+the periodic × clamped basis. The allocating `contract` and `l2_projection!` allocate more
+than before, because each builds two buffers of the largest intermediate array, and
+`l2_projection!` also the buffers of the mass solve. `mass_solve!` on a `KroneckerMass` checks
+the length of `y` before it copies `x`, and raises a `DimensionMismatch` for a `y` of the wrong
+length. Where the element types of the arguments are equal, the results of the allocating
 forms are bit-for-bit those of `cb82e6f`. The three-argument `l2_projection!` now contracts in
 `eltype(û)`, not in the promoted type of the quadrature and the sample, so where these types
 differ its result can differ from that of `cb82e6f` by the round-off of the narrower type.

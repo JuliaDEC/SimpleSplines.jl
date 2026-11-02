@@ -426,7 +426,7 @@ end
 # than taken from a `reshape`, because a `reshape` of an `Array` allocates its header.
 #
 # The fibre is copied into a contiguous buffer rather than passed as a view. A view into the
-# middle index of a three-way reshape has stride `before`, and an FFTW plan or a LAPACK banded
+# middle index of a three-way reading has stride `before`, and an FFTW plan or a LAPACK banded
 # solve addresses only contiguous memory -- so the one-dimensional solve would stage such a
 # fibre through its own buffer in any case. The two buffers `src` and `dst` have N_k entries
 # and are reused across the fibres of the axis. They can come from a caller's workspace, so
@@ -789,10 +789,10 @@ The forms of [`contract`](@ref) and [`l2_projection!`](@ref) that take a workspa
 `l2_projection!` writes `l2_projection(q, F)` into `û`. `F` is the sample on the quadrature
 grid and is not changed. The workspace holds two buffers for the intermediate arrays of the
 contraction and a [`mass_workspace`](@ref) of `mass_operator(q)` for the solve. Wrong sizes
-of `L`, `û` or `F` raise the `DimensionMismatch` of the allocating forms; a workspace whose
-element type is not `eltype(L)`, or `eltype(û)`, or whose sizes do not fit `q`, raises an
-`ArgumentError`. `contract` builds the two buffers on each call, and the three-argument
-`l2_projection!` a whole workspace.
+of `L`, `û` or `F` raise a `DimensionMismatch`, for `û` and `F` that of the allocating
+forms; a workspace whose element type is not `eltype(L)`, or `eltype(û)`, or whose sizes do
+not fit `q`, raises an `ArgumentError`. `contract` builds the two buffers on each call, and
+the three-argument `l2_projection!` a whole workspace.
 
 A workspace belongs to one task. It does not make the quadrature safe for two tasks: a
 [`CirculantMass`](@ref) factor of its mass operator holds a scratch vector of its own.
