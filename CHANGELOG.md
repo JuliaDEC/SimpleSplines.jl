@@ -5,6 +5,20 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+The CI Downgrade job resolves `Project.toml` and `test/Project.toml` together at their lower
+bounds on Julia 1.12 and runs the tests there. Three test dependencies get a floor that works
+on Julia 1.12:
+
+- `StaticArrays` 1 → 1.5.17: every earlier release caps `julia` at 1.10.
+- `JET` gets the compat entry `0.10, 0.11, 0.12, 0.13`. Without one, the merged resolve picks
+  the oldest release that installs, and 0.10.0 is the first release for Julia 1.12.
+- `Aqua` 0.8 → 0.8.14: 0.8.13 and earlier read the `mt` field of `Core.TypeName`, which Julia
+  1.12 does not have, so the piracy test errors.
+
 ## [0.3.4] — 2026-10-31
 
 ### Bug Fixes
