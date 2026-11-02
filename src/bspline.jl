@@ -1,17 +1,22 @@
 
 @inline _evaltype(::Type{T}, ::Type{S}) where {T, S} = promote_type(T, S)
 
-# The type of the value of an evaluation at a point of type `P` with coefficients, or a basis, of
-# type `C`. It follows the point: a `Float32` point gives a `Float32` on a `Float64` basis, and
-# a `ForwardDiff.Dual` point a `Dual`; complex coefficients make it complex in that type. A point
-# that is not a floating-point type, an `Int` or a `Rational`, cannot hold the result, so the
-# promotion of `C` and `P` stands.
-@inline function _resulttype(::Type{C}, ::Type{P}) where {C, P}
-    if P <: Real && float(P) === P
-        C <: Complex ? Complex{P} : P
-    else
-        promote_type(C, P)
-    end
+# The type of the value of an evaluation at a point of type `P`, where `C` is the type of the
+# basis or the promotion of the basis and the coefficients. Where `C` is an IEEE float
+# (`Float16`, `Float32`, `Float64`) or a complex number of one, and `P` is an IEEE float, the
+# result takes the precision of the point: a `Float64` basis at a `Float32` point gives a
+# `Float32`, and complex `Float64` coefficients there a `ComplexF32`. Every other type of the
+# basis, the coefficients or the point is kept by promotion: `ForwardDiff.Dual` coefficients or a
+# `Dual` point give a `Dual`, a `BigFloat` basis or `BigFloat` coefficients a `BigFloat`, and an
+# `Int` or a `Rational` point the type of the basis. The rule is written as dispatch, so that it
+# resolves when the caller is compiled; a subtype test against
+# `Union{Base.IEEEFloat, Complex{<:Base.IEEEFloat}}` in the body is not folded, and allocates on
+# every call.
+@inline _resulttype(::Type{C}, ::Type{P}) where {C, P} = promote_type(C, P)
+@inline _resulttype(::Type{<:Base.IEEEFloat}, ::Type{P}) where {P <: Base.IEEEFloat} = P
+@inline function _resulttype(::Type{<:Complex{<:Base.IEEEFloat}},
+        ::Type{P}) where {P <: Base.IEEEFloat}
+    Complex{P}
 end
 
 # Whether `x` sits at the value the topmost knot span is to be closed at. `nothing` is the
@@ -577,12 +582,13 @@ The `d`-th derivative of the `j`-th basis function of `b` at `x`, or of the spli
 
 `x` may also be a vector, in which case a vector is returned.
 
-The type of the result follows the point, as it does for [`evaluate!`](@ref): a `Float64` basis
-at a `Float32` point returns a `Float32`, and a `ForwardDiff.Dual` point returns a `Dual`.
-Complex coefficients make the result complex in that type. A point that is not a
-floating-point type, such as an `Int` or a `Rational`, cannot hold the result, so the
-promotion of the type of the basis and the type of the point stands: an `Int` point on a
-`Float64` basis returns a `Float64`.
+Where the basis and the coefficients are IEEE floats (`Float16`, `Float32`, `Float64`) or
+complex numbers of them, and the point is an IEEE float, the result takes the precision of the
+point: a `Float64` basis at a `Float32` point returns a `Float32`, and complex `Float64`
+coefficients there a `ComplexF32`. Every other type is kept by promotion of the types of the
+basis, the coefficients and the point: a `ForwardDiff.Dual` point or `Dual` coefficients return
+a `Dual`, a `BigFloat` basis or `BigFloat` coefficients a `BigFloat`, and an `Int` point on a
+`Float64` basis a `Float64`.
 
 The explicit derivative order is what the lazy `b'` products cannot give: the discrete
 brackets need `d` up to `3`, and stacking `Derivative` that deep does not compose.
@@ -612,9 +618,15 @@ two are within a third of each other at ``p = 3`` and a factor of 150 apart at `
 """
 function evaluate(b::BSplineBasis{T}, j::Integer, x::Number, d::Integer = 0) where {T}
     @boundscheck (1 ≤ j ≤ nbasis(b)) || throw(BoundsError(b, j))
+    convert(_resulttype(T, typeof(x)), _evaluate_promoted(b, j, x, d))
+end
+
+# The value of `evaluate(b, j, x, d)` in the promotion of the type of the basis and the type of
+# the point, before the result type narrows it. A recombined basis sums these, so that a buffer
+# wider than the point keeps the precision of the basis.
+function _evaluate_promoted(b::BSplineBasis, j::Integer, x::Number, d::Integer)
     d ≥ 0 || throw(ArgumentError("the derivative order must be non-negative, got d = $(d)"))
-    convert(_resulttype(T, typeof(x)), _bspline(
-        b.knots, Int(j), b.p, x, Int(d), _closeat(b)))
+    _bspline(b.knots, Int(j), b.p, x, Int(d), _closeat(b))
 end
 
 function evaluate(b::PeriodicBSplineBasis{T}, j::Integer, x::Number,
@@ -660,12 +672,14 @@ caller's buffer `buf`, which allocates nothing.
 `buf` must have [`local_width`](@ref)`(b)` entries, or a `DimensionMismatch` is raised; its
 contents on entry do not matter, and on return they are the local block of
 [`evaluate_all!`](@ref). Its element type is the type the sum is computed in, and the type of
-the result. It follows the point, not the basis or the coefficients: it must hold `typeof(x)`,
-or an `ArgumentError` is raised. It must also have a floating-point element type, because the
-knot arithmetic is fractional: an `Int` buffer raises an `ArgumentError` even at an `Int` point.
-A `Float64` basis with `Float64` coefficients at a `Float32` point takes a `Float32` buffer and
-returns a `Float32`. A `ForwardDiff.Dual` point takes a buffer of `Dual`s, and a `Float64` point
-does not take a `Float32` buffer.
+the result; [`evaluate`](@ref) allocates a buffer of the type that its result-type rule gives.
+The buffer must hold `typeof(x)`, or an `ArgumentError` is raised. It must also have a
+floating-point element type, because the knot arithmetic is fractional: an `Int` buffer raises
+an `ArgumentError` even at an `Int` point. A `Float64` basis with `Float64` coefficients at a
+`Float32` point takes a `Float32` buffer and returns a `Float32`. A `ForwardDiff.Dual` point
+takes a buffer of `Dual`s, and a `Float64` point does not take a `Float32` buffer. Coefficients
+that the buffer cannot hold, such as `Dual` coefficients in a `Float64` buffer, raise the
+conversion error of the sum.
 
 A buffer belongs to one task. Two tasks that evaluate at once need a buffer each.
 
@@ -953,8 +967,8 @@ end
 
 The allocating form of [`evaluate_all!`](@ref): returns `(j₀, values)` with a freshly allocated
 buffer of [`local_width`](@ref) entries. The element type of the buffer is the type of the
-point, `typeof(x)`, unless that is not a floating-point type: then it is the promotion of the
-type of the basis and the type of the point.
+point, `typeof(x)`, where the basis and the point are IEEE floats; otherwise it is the promotion
+of the type of the basis and the type of the point.
 
 Convenient at a call site that runs once. A particle loop should hold its own buffer and call
 [`evaluate_all!`](@ref), which allocates nothing, or [`evaluate!`](@ref) for the value of a

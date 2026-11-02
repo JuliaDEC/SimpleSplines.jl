@@ -1,4 +1,4 @@
-using ForwardDiff: Dual
+using ForwardDiff: ForwardDiff, Dual
 using LinearAlgebra
 using Random
 using SimpleSplines
@@ -319,6 +319,83 @@ end
         @test (@inferred evaluate(B, ûc, x)) isa ComplexF32
         @test (@inferred evaluate(B, û, map(dual, x))) isa Dual12
         @test (@inferred evaluate(B, û, map(Int ∘ round, x))) isa Float64
+    end
+end
+
+@testset "$(rpad("coefficients that are not IEEE floats keep their type",76))" begin
+    x = 0.37
+    for b in bases_1d(Float64)
+        û = collect(range(0.1, 2.0; length = nbasis(b)))
+        φ = [evaluate(b, j, x) for j in 1:nbasis(b)]
+        φ′ = [evaluate(b, j, x, 1) for j in 1:nbasis(b)]
+
+        # Dual coefficients at a Float64 point: the gradient of the value with respect to the
+        # coefficients is the vector of the basis values at the point.
+        g = ForwardDiff.gradient(c -> evaluate(b, c, x), û)
+        @test g isa Vector{Float64}
+        @test isapprox(g, φ; rtol = 8 * eps(), atol = 8 * eps())
+        g′ = ForwardDiff.gradient(c -> evaluate(b, c, x, 1), û)
+        @test isapprox(g′, φ′; rtol = 8 * eps(), atol = 8 * eps() * 24)
+        @test isapprox(ForwardDiff.gradient(c -> Spline(b, c)(x), û), φ; rtol = 8 * eps(),
+            atol = 8 * eps())
+        @test isapprox(ForwardDiff.gradient(c -> evaluate(b, c, Float32(x)), û),
+            [evaluate(b, j, Float32(x)) for j in 1:nbasis(b)]; rtol = 8 * eps(Float32),
+            atol = 8 * eps(Float32))
+
+        ûd = map(dual, û)
+        vd = @inferred evaluate(b, ûd, x)
+        @test vd isa Dual12
+        buf = zeros(Dual12, local_width(b))
+        @test (@inferred evaluate!(buf, b, ûd, x)) == vd
+        # A Float64 buffer cannot hold Dual coefficients: the conversion of the sum refuses them.
+        @test outcome(() -> evaluate!(zeros(local_width(b)), b, ûd, x)) == MethodError
+
+        # BigFloat coefficients at a Float64 or a Float32 point return a BigFloat.
+        for xp in (x, Float32(x))
+            vb = evaluate(b, big.(û), xp)
+            @test vb isa BigFloat
+            @test isapprox(vb, evaluate(b, û, Float64(xp)); rtol = 8 * eps())
+            # Complex BigFloat coefficients return a Complex{BigFloat}.
+            @test evaluate(b, complex.(big.(û), big.(û)), xp) isa Complex{BigFloat}
+        end
+    end
+
+    # A BigFloat basis at a Float64 point returns a BigFloat.
+    for bb in bases_1d(BigFloat)
+        û = big.(collect(range(0.1, 2.0; length = nbasis(bb))))
+        @test evaluate(bb, û, x) isa BigFloat
+        @test evaluate(bb, Float64.(û), x) isa BigFloat
+        @test evaluate(bb, 2, x) isa BigFloat
+        @test evaluate_all(bb, x)[2] isa Vector{BigFloat}
+    end
+
+    for B in (basis_2d(Float64), basis_3d(Float64))
+        D = ndims(B)
+        Û = ones(size(B)...)
+        xB = D == 2 ? (0.3, 0.4) : (0.3, 1.2, -0.3)
+        g = ForwardDiff.gradient(c -> evaluate(B, c, xB), Û)
+        @test g isa Array{Float64, D}
+        @test isapprox(g, [evaluate(B, I, xB) for I in CartesianIndices(B)];
+            rtol = 8 * eps(), atol = 8 * eps())
+        @test evaluate(B, big.(Û), xB) isa BigFloat
+    end
+end
+
+@testset "$(rpad("complex coefficients at derivative orders above zero",76))" begin
+    # The derivative step compares knot differences, which stay real in a complex buffer.
+    for b in bases_1d(Float64)
+        ur = randn(nbasis(b))
+        ui = randn(nbasis(b))
+        for x in (0.37, 0.37f0), d in 1:2
+
+            T = typeof(x)
+            v = @inferred evaluate(b, ur .+ im .* ui, x, d)
+            @test v isa Complex{T}
+            tol = 8 * eps(T) * (8 * degree(b))^d * 2
+            @test isapprox(real(v), evaluate(b, ur, x, d); rtol = 8 * eps(T), atol = tol)
+            @test isapprox(imag(v), evaluate(b, ui, x, d); rtol = 8 * eps(T), atol = tol)
+            @test abs(imag(v)) > 0 || degree(b) < d
+        end
     end
 end
 

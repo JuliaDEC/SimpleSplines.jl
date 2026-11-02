@@ -178,11 +178,11 @@ indexed by `I`, or of the spline with coefficient array `û`.
 indexable `D`-vector. `d` is a per-axis tuple of derivative orders; the gradient component
 ``\partial_k`` is `d = ntuple(i -> i == k ? 1 : 0, D)`.
 
-The type of the result follows the point, `eltype(x)`, as it does for [`evaluate!`](@ref): a
-`Float64` basis at a `Float32` point returns a `Float32`, and a `ForwardDiff.Dual` point returns
-a `Dual`. Complex coefficients make the result complex in that type. A point that is not a
-floating-point type, such as an `Int` or a `Rational`, cannot hold the result, so the
-promotion of the type of the basis and the type of the point stands.
+The type of the result follows the rule of the one-dimensional [`evaluate`](@ref), with
+`eltype(x)` as the type of the point: an IEEE float basis with IEEE float or complex coefficients
+at a `Float32` point returns a `Float32` or a `ComplexF32`, and every other type of the basis,
+the coefficients or the point, such as a `ForwardDiff.Dual`, a `BigFloat` or an `Int`, is kept
+by promotion.
 
 ```jldoctest
 julia> B = BSplineBasis(UniformMesh(8, 0 .. 1), 3) ⊗ BSplineBasis(UniformMesh(8, 0 .. 1), 2);
@@ -233,10 +233,12 @@ which allocates nothing.
 `bufs[k]` must have `local_width(bases(B)[k])` entries, or a `DimensionMismatch` is raised;
 their contents on entry do not matter, and on return they are the blocks of
 [`evaluate_all!`](@ref). Their element type is the type the sum is computed in, and the type of
-the result. It follows the point, not the basis or the coefficients: it must hold `eltype(x)`,
-or an `ArgumentError` is raised. It must also have a floating-point element type, because the
-knot arithmetic is fractional: `Int` buffers raise an `ArgumentError` even at an `Int` point. A
-`Float64` basis at a `Float32` point takes `Float32` buffers and returns a `Float32`.
+the result; [`evaluate`](@ref) allocates buffers of the type that its result-type rule gives.
+The buffers must hold `eltype(x)`, or an `ArgumentError` is raised. They must also have a
+floating-point element type, because the knot arithmetic is fractional: `Int` buffers raise an
+`ArgumentError` even at an `Int` point. A `Float64` basis at a `Float32` point takes `Float32`
+buffers and returns a `Float32`. Coefficients that the buffers cannot hold, such as `Dual`
+coefficients in `Float64` buffers, raise the conversion error of the sum.
 
 The buffers belong to one task. Two tasks that evaluate at once need a tuple each.
 """

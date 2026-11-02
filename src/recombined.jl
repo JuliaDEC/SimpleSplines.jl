@@ -358,7 +358,7 @@ function evaluate_all!(values::AbstractVector{R}, b::RecombinedBSplineBasis, x::
     vals = nonzeros(Rm)
     for j in j₀:jn, t in nzrange(Rm, j)
 
-        values[j - j₀ + 1] += vals[t] * evaluate(b.parent, rows[t], x, d)
+        values[j - j₀ + 1] += vals[t] * _evaluate_promoted(b.parent, rows[t], x, d)
     end
     return j₀
 end

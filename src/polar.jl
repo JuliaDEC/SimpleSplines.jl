@@ -450,11 +450,11 @@ end
 The mixed derivative ``\partial_s^{d_1} \partial_\theta^{d_2}`` at `x = (s, θ)` of the `k`-th
 basis function, or of the spline with coefficient vector `û`.
 
-The type of the result follows the point, `eltype(x)`, as it does for [`evaluate!`](@ref): a
-`Float64` basis at a `Float32` point returns a `Float32`. Complex coefficients make the result
-complex in that type. A point that is not a floating-point type, such as an `Int` or a
-`Rational`, cannot hold the result, so the promotion of the type of the basis and the type of
-the point stands.
+The type of the result follows the rule of the one-dimensional [`evaluate`](@ref), with
+`eltype(x)` as the type of the point: an IEEE float basis with IEEE float or complex coefficients
+at a `Float32` point returns a `Float32` or a `ComplexF32`, and every other type of the basis,
+the coefficients or the point, such as a `ForwardDiff.Dual`, a `BigFloat` or an `Int`, is kept
+by promotion.
 
 ```jldoctest
 julia> B = PolarSplineBasis(BSplineBasis(UniformMesh(8, 0 .. 1), 3),
@@ -511,8 +511,8 @@ Base.getindex(B::PolarSplineBasis, x, k) = evaluate(B, k, x)
 
 The basis functions that are nonzero at `x = (s, θ)`, as a pair `(idx, values)` of the global
 indices and the matching values of ``\partial_s^{d_1} \partial_\theta^{d_2} \Psi``. The element
-type of `values` is the type of the point, `eltype(x)`, unless that is not a floating-point
-type: then it is the promotion of the type of the basis and the type of the point.
+type of `values` is the type of the point, `eltype(x)`, where the basis and the point are IEEE
+floats; otherwise it is the promotion of the type of the basis and the type of the point.
 
 Unlike the tensor-product and one-dimensional forms, which return the **first index** of a
 contiguous block, this returns the indices themselves. The polar index set is not a product
