@@ -1,6 +1,24 @@
 
 @inline _evaltype(::Type{T}, ::Type{S}) where {T, S} = promote_type(T, S)
 
+# The type of the value of an evaluation at a point of type `P`, where `C` is the type of the
+# basis or the promotion of the basis and the coefficients. Where `C` is an IEEE float
+# (`Float16`, `Float32`, `Float64`) or a complex number of one, and `P` is an IEEE float, the
+# result takes the precision of the point: a `Float64` basis at a `Float32` point gives a
+# `Float32`, and complex `Float64` coefficients there a `ComplexF32`. Every other type of the
+# basis, the coefficients or the point is kept by promotion: `ForwardDiff.Dual` coefficients or a
+# `Dual` point give a `Dual`, a `BigFloat` basis or `BigFloat` coefficients a `BigFloat`, and an
+# `Int` or a `Rational` point the type of the basis. The rule is written as dispatch, so that it
+# resolves when the caller is compiled; a subtype test against
+# `Union{Base.IEEEFloat, Complex{<:Base.IEEEFloat}}` in the body is not folded, and allocates on
+# every call.
+@inline _resulttype(::Type{C}, ::Type{P}) where {C, P} = promote_type(C, P)
+@inline _resulttype(::Type{<:Base.IEEEFloat}, ::Type{P}) where {P <: Base.IEEEFloat} = P
+@inline function _resulttype(::Type{<:Complex{<:Base.IEEEFloat}},
+        ::Type{P}) where {P <: Base.IEEEFloat}
+    Complex{P}
+end
+
 # Whether `x` sits at the value the topmost knot span is to be closed at. `nothing` is the
 # answer for a basis that has no such point -- a periodic one, whose knot vector extends
 # beyond the domain in both directions -- and it is a type, not a value, so the comparison
@@ -564,6 +582,14 @@ The `d`-th derivative of the `j`-th basis function of `b` at `x`, or of the spli
 
 `x` may also be a vector, in which case a vector is returned.
 
+Where the basis and the coefficients are IEEE floats (`Float16`, `Float32`, `Float64`) or
+complex numbers of them, and the point is an IEEE float, the result takes the precision of the
+point: a `Float64` basis at a `Float32` point returns a `Float32`, and complex `Float64`
+coefficients there a `ComplexF32`. Every other type is kept by promotion of the types of the
+basis, the coefficients and the point: a `ForwardDiff.Dual` point or `Dual` coefficients return
+a `Dual`, a `BigFloat` basis or `BigFloat` coefficients a `BigFloat`, and an `Int` point on a
+`Float64` basis a `Float64`.
+
 The explicit derivative order is what the lazy `b'` products cannot give: the discrete
 brackets need `d` up to `3`, and stacking `Derivative` that deep does not compose.
 
@@ -592,6 +618,13 @@ two are within a third of each other at ``p = 3`` and a factor of 150 apart at `
 """
 function evaluate(b::BSplineBasis{T}, j::Integer, x::Number, d::Integer = 0) where {T}
     @boundscheck (1 ≤ j ≤ nbasis(b)) || throw(BoundsError(b, j))
+    convert(_resulttype(T, typeof(x)), _evaluate_promoted(b, j, x, d))
+end
+
+# The value of `evaluate(b, j, x, d)` in the promotion of the type of the basis and the type of
+# the point, before the result type narrows it. A recombined basis sums these, so that a buffer
+# wider than the point keeps the precision of the basis.
+function _evaluate_promoted(b::BSplineBasis, j::Integer, x::Number, d::Integer)
     d ≥ 0 || throw(ArgumentError("the derivative order must be non-negative, got d = $(d)"))
     _bspline(b.knots, Int(j), b.p, x, Int(d), _closeat(b))
 end
@@ -616,7 +649,7 @@ function evaluate(b::PeriodicBSplineBasis{T}, j::Integer, x::Number,
     for shift in (-L, zero(L), L)
         v += _bspline(b.knots, k, b.p, x̃ + shift, Int(d), nothing)
     end
-    return v
+    return convert(_resulttype(T, typeof(x)), v)
 end
 
 function evaluate(b::AbstractBSplineBasis, j::Integer, X::AbstractVector, d::Integer = 0)
@@ -625,22 +658,66 @@ end
 
 function evaluate(b::AbstractBSplineBasis{T}, û::AbstractVector{S}, x::Number,
         d::Integer = 0) where {T, S}
+    R = _resulttype(promote_type(T, S), typeof(x))
+    evaluate!(Vector{R}(undef, local_width(b)), b, û, x, d)
+end
+
+@doc raw"""
+    evaluate!(buf, b::AbstractBSplineBasis, û::AbstractVector, x::Number, d = 0)
+    evaluate!(buf, s::Spline, x::Number, d = 0)
+
+The value of [`evaluate`](@ref)`(b, û, x, d)`, or of `evaluate(s, x, d)`, computed in the
+caller's buffer `buf`, which allocates nothing.
+
+`buf` must have [`local_width`](@ref)`(b)` entries, or a `DimensionMismatch` is raised; its
+contents on entry do not matter, and on return they are the local block of
+[`evaluate_all!`](@ref). Its element type is the type the sum is computed in, and the type of
+the result; [`evaluate`](@ref) allocates a buffer of the type that its result-type rule gives.
+The buffer must hold `typeof(x)`, or an `ArgumentError` is raised. It must also have a
+floating-point element type, because the knot arithmetic is fractional: an `Int` buffer raises
+an `ArgumentError` even at an `Int` point. A `Float64` basis with `Float64` coefficients at a
+`Float32` point takes a `Float32` buffer and returns a `Float32`. A `ForwardDiff.Dual` point
+takes a buffer of `Dual`s, and a `Float64` point does not take a `Float32` buffer. Coefficients
+that the buffer cannot hold, such as `Dual` coefficients in a `Float64` buffer, raise the
+conversion error of the sum.
+
+A buffer belongs to one task. Two tasks that evaluate at once need a buffer each.
+
+```jldoctest
+julia> b = BSplineBasis(UniformMesh(8, 0 .. 1), 3); û = collect(1.0:nbasis(b));
+
+julia> buf = zeros(local_width(b));
+
+julia> evaluate!(buf, b, û, 0.3, 1) == evaluate(b, û, 0.3, 1)
+true
+```
+"""
+function evaluate!(buf::AbstractVector{B}, b::AbstractBSplineBasis{T},
+        û::AbstractVector{S}, x::Number, d::Integer = 0) where {B, T, S}
     length(û) == nbasis(b) || throw(DimensionMismatch(
         "the coefficient vector has $(length(û)) entries but the basis has $(nbasis(b))"))
-    R = _evaltype(promote_type(T, S), typeof(x))
-    _evaluate_block!(Vector{R}(undef, local_width(b)), b, û, x, d)
+    w = local_width(b)
+    length(buf) == w || throw(DimensionMismatch(
+        "evaluate! needs a buffer of $(w) entries for this basis, got $(length(buf)); " *
+        "see `local_width`"))
+    promote_type(B, typeof(x)) === B || throw(ArgumentError(
+        "evaluate! needs a buffer that holds the point type $(typeof(x)), got a buffer of $(B)"))
+    float(B) === B || throw(ArgumentError(
+        "evaluate! needs a buffer of a floating-point type, because the knot arithmetic is " *
+        "fractional, got a buffer of $(B)"))
+    _evaluate_block!(buf, b, û, x, d)
 end
 
 # The local-block sum, against a caller-supplied buffer. Only the block contributes, so this
 # is O(p) per point where summing `evaluate` over `eachindex(û)` is O(N).
 #
-# Split out so that a sweep over many points allocates one buffer for the sweep rather than
-# one per point. The buffer is the whole of the difference between this and BSplineKit at
-# small `n`, which reaches the block through the spline order carried in its *type* and can
-# therefore keep it on the stack; here the degree is a field, so the length is a run-time
-# value. Passing a `Val`-sized `MVector` instead was measured and does not help -- it halves
-# the allocation and returns the saving in dispatch, because `evaluate_all!` takes an
-# `AbstractVector` and the buffer escapes into it either way.
+# The buffer is the whole of the difference between this and BSplineKit at small `n`, which
+# reaches the block through the spline order carried in its *type* and can therefore keep it
+# on the stack; here the degree is a field, so the length is a run-time value. Passing a
+# `Val`-sized `MVector` instead was measured and does not help -- it halves the allocation and
+# returns the saving in dispatch, because `evaluate_all!` takes an `AbstractVector` and the
+# buffer escapes into it either way. The allocation-free path is therefore a buffer that the
+# caller holds, through `evaluate!`; a sweep over many points below holds one for the sweep.
 function _evaluate_block!(values::AbstractVector{R}, b::AbstractBSplineBasis,
         û::AbstractVector, x::Number, d::Integer) where {R}
     j₀ = evaluate_all!(values, b, x, d)
@@ -652,7 +729,7 @@ function _evaluate_block!(values::AbstractVector{R}, b::AbstractBSplineBasis,
         # index outside 1:N means the block of this cell reaches past the end of the basis.
         # Such a term is genuinely absent rather than zero-valued, so it is skipped.
         1 ≤ j ≤ nbasis(b) || continue
-        v += values[t] * û[j]
+        v += convert(R, values[t] * û[j])
     end
     return v
 end
@@ -661,7 +738,7 @@ function evaluate(b::AbstractBSplineBasis{T}, û::AbstractVector{S}, X::Abstract
         d::Integer = 0) where {T, S}
     length(û) == nbasis(b) || throw(DimensionMismatch(
         "the coefficient vector has $(length(û)) entries but the basis has $(nbasis(b))"))
-    R = _evaltype(promote_type(T, S), eltype(X))
+    R = _resulttype(promote_type(T, S), eltype(X))
 
     # One buffer for the whole sweep. Evaluating point by point through the scalar method
     # takes one per point, which for a plot or a diagnostic over a fine grid is the entire
@@ -834,6 +911,15 @@ function evaluate_all!(values::AbstractVector{R}, b::AbstractBSplineBasis, x::Nu
 
     q = p - Int(d)
 
+    # The recursion runs in the real type of the element type of `values`, but every knot
+    # difference is formed first, in the promotion of the type of the knots and the type of the
+    # point, and only the difference is converted. A `Float64` basis into a `Float32` buffer
+    # therefore does a `Float32` sum on exact distances: converting the knots and the point
+    # first would round two knots far from the origin to one `Float32` and divide by zero.
+    # `real`, so that a complex buffer keeps real knots and the comparisons of the derivative
+    # step stay real.
+    Q = real(R)
+
     # De Boor's triangular scheme for the q+1 nonzero splines of degree q on span k.
     # values[1:q+1] holds φ_{k-q}^q .. φ_k^q afterwards.
     values[1] = one(R)
@@ -842,8 +928,8 @@ function evaluate_all!(values::AbstractVector{R}, b::AbstractBSplineBasis, x::Nu
         for r in 1:j
             # right = kv[k+r] - x, left = kv[k+1-(j-r+1)] - ... written out below to keep
             # the index arithmetic of the standard form visible.
-            right = kv[k + r] - x̃
-            left = x̃ - kv[k + 1 - j + r - 1]
+            right = convert(Q, kv[k + r] - x̃)
+            left = convert(Q, x̃ - kv[k + 1 - j + r - 1])
             temp = values[r] / (right + left)
             values[r] = saved + right * temp
             saved = left * temp
@@ -863,8 +949,8 @@ function evaluate_all!(values::AbstractVector{R}, b::AbstractBSplineBasis, x::Nu
             below = t ≥ 2 ? values[t - 1] : zero(R)
             above = t ≤ count ? values[t] : zero(R)
             j = k - count - 1 + t
-            da = kv[j + r] - kv[j]
-            db = kv[j + r + 1] - kv[j + 1]
+            da = convert(Q, kv[j + r] - kv[j])
+            db = convert(Q, kv[j + r + 1] - kv[j + 1])
             out = zero(R)
             da > 0 && (out += below / da)
             db > 0 && (out -= above / db)
@@ -880,13 +966,16 @@ end
     evaluate_all(b::AbstractBSplineBasis, x, d = 0)
 
 The allocating form of [`evaluate_all!`](@ref): returns `(j₀, values)` with a freshly allocated
-buffer of [`local_width`](@ref) entries.
+buffer of [`local_width`](@ref) entries. The element type of the buffer is the type of the
+point, `typeof(x)`, where the basis and the point are IEEE floats; otherwise it is the promotion
+of the type of the basis and the type of the point.
 
 Convenient at a call site that runs once. A particle loop should hold its own buffer and call
-[`evaluate_all!`](@ref), which allocates nothing.
+[`evaluate_all!`](@ref), which allocates nothing, or [`evaluate!`](@ref) for the value of a
+spline at the point.
 """
 function evaluate_all(b::AbstractBSplineBasis{T}, x::Number, d::Integer = 0) where {T}
-    R = _evaltype(T, typeof(x))
+    R = _resulttype(T, typeof(x))
     # `local_width`, not `degree(b) + 1`: a recombined basis has a wider block at the two
     # ends, because a recombined function there spans the union of two parent supports.
     values = Vector{R}(undef, local_width(b))

@@ -5,6 +5,110 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — targeting 0.4.0
+
+### Breaking Changes
+
+**An evaluation at an IEEE float point returns the precision of the point.** Where the basis and
+the coefficients are IEEE floats (`Float16`, `Float32`, `Float64`) or complex numbers of them, and
+the point is an IEEE float, the result takes the precision of the point. This changes the result
+wherever the point is narrower than the promotion of the basis and the coefficients. A `Float64`
+basis with `Float64` coefficients at a `Float32` point returns a `Float32`, where 0.3.5 returned a
+`Float64`; so does a `Float32` basis with `Float64` coefficients at a `Float32` point; complex
+`Float64` coefficients there return a `ComplexF32`, where 0.3.5 returned a `ComplexF64`; and
+`evaluate_all` returns buffers of `Float32`. This holds for `evaluate`,
+`evaluate_all` and `Spline` evaluation on a one-dimensional basis, `TensorProductBasis`,
+`RecombinedBSplineBasis` and `PolarSplineBasis`, including the forms for one basis function and
+the forms for a vector of points. A caller that needs the 0.3.5 result passes the point in the
+precision of `promote_type(eltype(basis), eltype(û))`: for `Float64` coefficients, `Float64(x)`, or
+`Float64.(x)` for a tuple or a vector of coordinates.
+Every other type is kept by promotion of the types of the basis, the coefficients and the point,
+as in 0.3.5: a `ForwardDiff.Dual` point or `Dual` coefficients return a `Dual`, so
+`ForwardDiff.gradient` with respect to the coefficients works; a `BigFloat` basis or `BigFloat`
+coefficients return a `BigFloat`; and an `Int` or a `Rational` point on a `Float64` basis returns
+a `Float64`. A point of the precision of that promotion, or a wider one, returns the type of
+0.3.5.
+
+**`mass_solve!(y, op, x)` on a `KroneckerMass`, and so `ldiv!(y, op, x)`, raise a
+`DimensionMismatch` for an `x` whose length is not that of `y`.** In 0.3.4 and 0.3.5 an `x`
+shorter than `y` raised no error: the solve copied `x` into the start of `y` and solved the whole
+of `y`, so it ran on whatever the rest of `y` held. An `x` longer than `y` raised a `BoundsError`.
+A caller passes an `x` of `length(y)`; a caller that catches the `BoundsError` catches the
+`DimensionMismatch` instead. `\` is not affected: it builds its output with `similar(x)`, and a
+wrong-length `x` raises a `DimensionMismatch` there in 0.3.5 and in this release.
+
+**The new caller-buffer forms refuse some buffers.** These forms are new in this release, so no
+call of 0.3.5 changes. `evaluate!` raises an `ArgumentError` for a buffer that does not hold the
+type of the point, or whose element type is not a floating-point type; an `Int` buffer is refused
+even at an `Int` point, where the allocating form returns a `Float64`. A caller allocates the
+buffer in the type of the point, `zeros(typeof(x), local_width(b))`, or in a wider floating-point
+type. `mass_solve!(y, op, x, work)` and `contract!(L, q, F, work, d)` raise an `ArgumentError` for
+a workspace whose element type is not that of `y` or `L`, or whose sizes do not fit the operator
+or the quadrature: a caller builds the workspace with `mass_workspace(op, eltype(y))` or
+`contract_workspace(q, eltype(L))`.
+
+### New Features
+
+The hot evaluation, solve and projection paths take buffers that the caller holds, and then
+allocate nothing, except for the solve on a periodic axis with a non-uniform mesh
+(`GradedMesh` or `RandomMesh`). The `FactorizedMass` of that axis allocates a CHOLMOD
+temporary, because CHOLMOD has no in-place `ldiv!`. Measured in a cold process with `Float64`,
+periodic × clamped, cubic, on 8 × 8 cells: 0 bytes on a `UniformMesh`, and 9328 bytes per
+`mass_solve!(y, op, x, work)` and per `l2_projection!(û, q, F, work)` on a `GradedMesh` or a
+`RandomMesh`.
+`evaluate!(buf, b, û, x, d)` and `evaluate!(buf, s, x, d)` evaluate a spline on a
+one-dimensional basis with a buffer of `local_width(b)` entries; `evaluate!(bufs, B, û, x, d)`
+does it on a `TensorProductBasis` with one buffer per axis. `mass_workspace(op, T)` and
+`mass_solve!(y, op, x, work)` solve with a `KroneckerMass`; `contract_workspace(q, T)`,
+`contract!(L, q, F, work, d)` and `l2_projection!(û, q, F, work)` contract and project on a
+`TensorProductQuadrature`. Each buffer and workspace belongs to one task. Tasks must not share a
+mass operator or `TensorProductQuadrature`, because a `CirculantMass` factor writes scratch space
+during each solve. The type of the result follows the rule of the first breaking change above,
+for the buffer forms and for the allocating forms alike. `evaluate!` computes in the buffer's type
+and returns it. The buffer must hold `typeof(x)` (`eltype(x)` for the tensor-product form), and it
+must have a floating-point element type; the last breaking change above gives the refusals. So a
+`Float64` basis with `Float64` coefficients at a `Float32` point works in a `Float32` buffer. It
+returns a `Float32` and allocates 0 bytes, measured with `@allocated` after a warm call on a cubic
+clamped basis. A `Float64` point into a `Float32` buffer raises, and so does a `ForwardDiff.Dual`
+point into a `Float64` buffer. The allocating forms stay, and build their buffers and call these.
+`evaluate_all!` forms each difference of a knot and the point in the promotion of their own types,
+and converts only the difference to the buffer type. A `Float64` basis on
+`UniformMesh(8, 1e8 .. (1e8 + 8))` at the `Float32` point `1e8` into a `Float32` buffer therefore
+returns the value of the span. The knots `1e8` and `1e8 + 1` are the same `Float32`, so converting
+them before the subtraction divides by zero and returns `NaN`.
+
+Bytes per call, measured with `@allocated` after a warm call through a function barrier, in a
+cold process on Julia 1.13.3, on `cb82e6f` and on this release. The one-dimensional basis is
+clamped and cubic on 8 cells; the two-dimensional one is periodic × clamped, cubic, on 8 × 8
+cells. Each pair is `Float64` / `Float32`.
+
+| call | `cb82e6f` | the allocating form now | the caller-buffer form |
+|:--|--:|--:|--:|
+| `evaluate(b, û, x, d)` | 96 / 80 | 96 / 80 | 0 / 0 |
+| `evaluate(B, û, x, d)` | 192 / 160 | 192 / 160 | 0 / 0 |
+| `mass_solve!(y, op, x)` | 1232 / 1104 | 544 / 416 | 0 / 0 |
+| `contract(q, F, d)` | 24064 / 13536 | 29584 / 14912 | 0 / 0 |
+| `l2_projection!(û, q, F)` | 25296 / 14640 | 29344 / 14880 | 0 / 0 |
+
+The solve along the axes of a `KroneckerMass` and the contraction along the axes of `contract`
+are unrolled over the tuple of axes, so an operator or a quadrature whose axes have different
+types no longer dispatches dynamically: that is the drop of the three-argument `mass_solve!` on
+the periodic × clamped basis. The allocating `contract` and `l2_projection!` allocate more than
+before, because each builds two buffers of the largest intermediate array, and `l2_projection!`
+also the buffers of the mass solve. `mass_solve!` on a `KroneckerMass` checks the lengths of `y`
+and `x` before it copies `x`, and raises a `DimensionMismatch` for a `y` or an `x` whose length
+is not that of the operator. Where the element types of the arguments are equal, the results of
+the allocating forms are bit-for-bit those of `cb82e6f`. The three-argument `l2_projection!`
+contracts in `eltype(û)`, not in the promoted type of the quadrature and the sample, so where
+these types differ and the call runs, its result can differ from that of `cb82e6f` by the
+round-off of the narrower type. A `Float32` `û` does not run on a `Float64` quadrature with a
+periodic axis on a `UniformMesh`, in `cb82e6f` and in this release: the `CirculantMass` factor
+raises a `MethodError` in its `Float64` FFT plan (known issue K7). A periodic axis on a
+`GradedMesh` runs.
+
+`ForwardDiff` joins the test dependencies: the tests evaluate with `ForwardDiff.Dual` arguments
+and buffers, which also allocate nothing.
+
 ## [0.3.5] — 2026-11-02
 
 ### Bug Fixes

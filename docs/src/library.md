@@ -86,6 +86,7 @@ polynomial_reproduction
 
 ```@docs
 evaluate
+evaluate!
 evaluate_all
 evaluate_all!
 BSplineDerivative
@@ -124,6 +125,7 @@ KroneckerMass
 mass_operator
 mass_factors
 mass_solve!
+mass_workspace
 ```
 
 ## Tensor products
@@ -137,6 +139,8 @@ quadratures
 quadrature_grid_size
 quadrature_sample
 contract
+contract!
+contract_workspace
 ```
 
 ## Polar splines
