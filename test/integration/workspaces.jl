@@ -126,13 +126,65 @@ end
         @test_throws DimensionMismatch evaluate!(zeros(w), b, zeros(nbasis(b) + 1), 0.37)
         @test startswith(message(() -> evaluate!(zeros(w), b, zeros(nbasis(b) + 1), 0.37)),
             "DimensionMismatch: the coefficient vector has $(nbasis(b) + 1) entries")
-        # a buffer that cannot hold the value, of a narrower type or for a Dual argument
+        # a buffer that cannot hold the type of the point, a Float64 point into a Float32
+        # buffer or a Dual point into a Float64 buffer
         @test_throws ArgumentError evaluate!(zeros(Float32, w), b, û, 0.37)
         @test startswith(message(() -> evaluate!(zeros(Float32, w), b, û, 0.37)),
-            "ArgumentError: evaluate! needs a buffer that holds Float64, got a buffer of " *
-            "Float32")
+            "ArgumentError: evaluate! needs a buffer that holds the point type Float64, " *
+            "got a buffer of Float32")
         @test_throws ArgumentError evaluate!(zeros(Float32, w), Spline(b, û), 0.37)
         @test_throws ArgumentError evaluate!(zeros(w), b, û, dual(0.37))
+        @test startswith(message(() -> evaluate!(zeros(w), b, û, dual(0.37))),
+            "ArgumentError: evaluate! needs a buffer that holds the point type $(Dual12), " *
+            "got a buffer of Float64")
+    end
+end
+
+@testset "$(rpad("evaluate! of a Float64 spline at a Float32 point",76))" begin
+    for b in bases_1d(Float64)
+        û = randn(nbasis(b))
+        s = Spline(b, û)
+        buf = zeros(Float32, local_width(b))
+        for x in Float32[0.37, 0.5, 0, 1, prevfloat(1.0f0), -0.25, 1.75], d in 0:2
+
+            ref = Float32(evaluate(b, û, Float64(x), d))
+            v = @inferred evaluate!(buf, b, û, x, d)
+            @test v isa Float32
+            # The sum cancels, so the floor is the size of its terms: the coefficients, times
+            # the size of a basis function after d derivatives on 8 cells.
+            atol = 8 * eps(Float32) * maximum(abs, û) * (8 * degree(b))^d
+            @test isapprox(v, ref; rtol = 8 * eps(Float32), atol)
+            w = @inferred evaluate!(buf, s, x, d)
+            @test w isa Float32
+            @test w == v
+        end
+        if MEASURE
+            @test allocs(evaluate!, buf, b, û, 0.37f0, 1) == 0
+            @test allocs(evaluate!, buf, s, 0.37f0, 1) == 0
+        end
+    end
+
+    # Float64 point types are unaffected, and a wider buffer holds a Float32 point
+    b = bases_1d(Float64)[2]
+    û = randn(nbasis(b))
+    @test evaluate!(zeros(local_width(b)), b, û, 0.37f0) isa Float64
+
+    for B in (basis_2d(Float64), basis_3d(Float64))
+        D = ndims(B)
+        û = randn(size(B)...)
+        bufs = map(w -> zeros(Float32, w), local_width(B))
+        x = D == 2 ? (0.37f0, 0.4f0) : (0.37f0, 1.2f0, -0.3f0)
+        for d in (ntuple(_ -> 0, D), ntuple(k -> k == 1 ? 1 : 0, D))
+            ref = Float32(evaluate(B, û, Float64.(x), d))
+            v = @inferred evaluate!(bufs, B, û, x, d)
+            @test v isa Float32
+            atol = 8 * eps(Float32) * maximum(abs, û) * 24^sum(d)
+            @test isapprox(v, ref; rtol = 8 * eps(Float32), atol)
+        end
+        if MEASURE
+            d = ntuple(k -> k == 1 ? 1 : 0, D)
+            @test allocs(evaluate!, bufs, B, û, x, d) == 0
+        end
     end
 end
 
@@ -214,14 +266,14 @@ end
         @test startswith(message(() -> evaluate!(bufs, B, ûbad, first(points))),
             "DimensionMismatch: the coefficient array is $(size(ûbad)) but the basis is " *
             "$(size(B))")
-        # buffers that cannot hold the value, for Dual arguments or of a narrower type
+        # buffers that cannot hold the type of the point, for Dual points or of a narrower type
         @test_throws ArgumentError evaluate!(bufs, B, û, map(dual, first(points)))
         if T === Float64
             narrow = map(w -> zeros(Float32, w), local_width(B))
             @test_throws ArgumentError evaluate!(narrow, B, û, first(points))
             @test startswith(message(() -> evaluate!(narrow, B, û, first(points))),
-                "ArgumentError: evaluate! needs buffers that hold Float64, got buffers of " *
-                "Float32")
+                "ArgumentError: evaluate! needs buffers that hold the point type Float64, " *
+                "got buffers of Float32")
         end
     end
 end

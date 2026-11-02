@@ -638,9 +638,11 @@ caller's buffer `buf`, which allocates nothing.
 
 `buf` must have [`local_width`](@ref)`(b)` entries, or a `DimensionMismatch` is raised; its
 contents on entry do not matter, and on return they are the local block of
-[`evaluate_all!`](@ref). Its element type is the type the sum is accumulated in, so it must
-hold `promote_type(eltype(b), eltype(û), typeof(x))`, or an `ArgumentError` is raised: a
-`ForwardDiff.Dual` argument takes a buffer of `Dual`s.
+[`evaluate_all!`](@ref). Its element type is the type the sum is computed in, and the type of
+the result. It follows the point, not the basis or the coefficients: it must hold `typeof(x)`,
+or an `ArgumentError` is raised. A `Float64` basis with `Float64` coefficients at a `Float32`
+point takes a `Float32` buffer and returns a `Float32`. A `ForwardDiff.Dual` point takes a
+buffer of `Dual`s, and a `Float64` point does not take a `Float32` buffer.
 
 A buffer belongs to one task. Two tasks that evaluate at once need a buffer each.
 
@@ -661,9 +663,8 @@ function evaluate!(buf::AbstractVector{B}, b::AbstractBSplineBasis{T},
     length(buf) == w || throw(DimensionMismatch(
         "evaluate! needs a buffer of $(w) entries for this basis, got $(length(buf)); " *
         "see `local_width`"))
-    R = _evaltype(promote_type(T, S), typeof(x))
-    promote_type(B, R) === B || throw(ArgumentError(
-        "evaluate! needs a buffer that holds $(R), got a buffer of $(B)"))
+    promote_type(B, typeof(x)) === B || throw(ArgumentError(
+        "evaluate! needs a buffer that holds the point type $(typeof(x)), got a buffer of $(B)"))
     _evaluate_block!(buf, b, û, x, d)
 end
 
@@ -688,7 +689,7 @@ function _evaluate_block!(values::AbstractVector{R}, b::AbstractBSplineBasis,
         # index outside 1:N means the block of this cell reaches past the end of the basis.
         # Such a term is genuinely absent rather than zero-valued, so it is skipped.
         1 ≤ j ≤ nbasis(b) || continue
-        v += values[t] * û[j]
+        v += convert(R, values[t] * û[j])
     end
     return v
 end
@@ -870,6 +871,14 @@ function evaluate_all!(values::AbstractVector{R}, b::AbstractBSplineBasis, x::Nu
 
     q = p - Int(d)
 
+    # The arithmetic runs in the real type of the element type of `values`: the cell is found
+    # above in the type of the basis, and the knots and the point are converted once the cell
+    # is known. A `Float64` basis into a `Float32` buffer therefore does a `Float32` sum, with
+    # no `Float64` intermediate to convert back. `real`, so that a complex buffer keeps real
+    # knots and the comparisons of the derivative step stay real.
+    Q = real(R)
+    x̃ = convert(Q, x̃)
+
     # De Boor's triangular scheme for the q+1 nonzero splines of degree q on span k.
     # values[1:q+1] holds φ_{k-q}^q .. φ_k^q afterwards.
     values[1] = one(R)
@@ -878,8 +887,8 @@ function evaluate_all!(values::AbstractVector{R}, b::AbstractBSplineBasis, x::Nu
         for r in 1:j
             # right = kv[k+r] - x, left = kv[k+1-(j-r+1)] - ... written out below to keep
             # the index arithmetic of the standard form visible.
-            right = kv[k + r] - x̃
-            left = x̃ - kv[k + 1 - j + r - 1]
+            right = convert(Q, kv[k + r]) - x̃
+            left = x̃ - convert(Q, kv[k + 1 - j + r - 1])
             temp = values[r] / (right + left)
             values[r] = saved + right * temp
             saved = left * temp
@@ -899,8 +908,8 @@ function evaluate_all!(values::AbstractVector{R}, b::AbstractBSplineBasis, x::Nu
             below = t ≥ 2 ? values[t - 1] : zero(R)
             above = t ≤ count ? values[t] : zero(R)
             j = k - count - 1 + t
-            da = kv[j + r] - kv[j]
-            db = kv[j + r + 1] - kv[j + 1]
+            da = convert(Q, kv[j + r] - kv[j])
+            db = convert(Q, kv[j + r + 1] - kv[j + 1])
             out = zero(R)
             da > 0 && (out += below / da)
             db > 0 && (out -= above / db)

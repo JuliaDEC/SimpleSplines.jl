@@ -226,8 +226,10 @@ which allocates nothing.
 
 `bufs[k]` must have `local_width(bases(B)[k])` entries, or a `DimensionMismatch` is raised;
 their contents on entry do not matter, and on return they are the blocks of
-[`evaluate_all!`](@ref). Their element type is the type the sum is accumulated in, so it must
-hold the promoted type of the basis, the coefficients and `x`, or an `ArgumentError` is raised.
+[`evaluate_all!`](@ref). Their element type is the type the sum is computed in, and the type of
+the result. It follows the point, not the basis or the coefficients: it must hold `eltype(x)`,
+or an `ArgumentError` is raised. A `Float64` basis at a `Float32` point takes `Float32`
+buffers and returns a `Float32`.
 
 The buffers belong to one task. Two tasks that evaluate at once need a tuple each.
 """
@@ -239,9 +241,8 @@ function evaluate!(bufs::NTuple{D, <:AbstractVector}, B::TensorProductBasis{T, D
     map(length, bufs) == widths || throw(DimensionMismatch(
         "evaluate! needs buffers of $(widths) entries on the axes, got $(map(length, bufs))"))
     R = eltype(first(bufs))
-    Rₓ = _evaltype(promote_type(T, S), eltype(x))
-    promote_type(R, Rₓ) === R || throw(ArgumentError(
-        "evaluate! needs buffers that hold $(Rₓ), got buffers of $(R)"))
+    promote_type(R, eltype(x)) === R || throw(ArgumentError(
+        "evaluate! needs buffers that hold the point type $(eltype(x)), got buffers of $(R)"))
 
     # Only the local block contributes, so this is the fast path rather than a sum over the
     # whole array. `evaluate_all!` gives the p_d+1 nonzero factors on each axis; their outer
@@ -264,7 +265,7 @@ function evaluate!(bufs::NTuple{D, <:AbstractVector}, B::TensorProductBasis{T, D
         # The weight is formed here rather than accumulated inside the `ntuple` above: a
         # variable assigned from within that closure is boxed, which infers as `Any` and makes
         # every element access below a dynamic dispatch.
-        v += prod(ntuple(k -> bufs[k][t[k]], D)) * û[idx...]
+        v += convert(R, prod(ntuple(k -> bufs[k][t[k]], D)) * û[idx...])
     end
     return v
 end

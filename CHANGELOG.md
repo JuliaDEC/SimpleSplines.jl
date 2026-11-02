@@ -23,8 +23,13 @@ does it on a `TensorProductBasis` with one buffer per axis. `mass_workspace(op, 
 `contract!(L, q, F, work, d)` and `l2_projection!(û, q, F, work)` contract and project on a
 `TensorProductQuadrature`. Each buffer and workspace belongs to one task. Tasks must not share a
 mass operator or `TensorProductQuadrature`, because a `CirculantMass` factor writes scratch space
-during each solve. A buffer whose element type cannot hold the promoted type of the basis, the
-coefficients and `x` raises an `ArgumentError`, and is not rounded to. The allocating forms stay,
+during each solve. The element type of the buffer follows the evaluation point, not the basis or the coefficients.
+`evaluate!` computes in the buffer's type and returns it. The buffer must hold `typeof(x)`
+(`eltype(x)` for the tensor-product form), or an `ArgumentError` is raised. So a `Float64` basis
+with `Float64` coefficients at a `Float32` point works in a `Float32` buffer. It returns a
+`Float32` and allocates 0 bytes, measured with `@allocated` after a warm call on a cubic clamped
+basis. A `Float64` point into a `Float32` buffer raises, and so does a `ForwardDiff.Dual` point
+into a `Float64` buffer. The allocating forms stay,
 and build their buffers and call these.
 
 Bytes per call, measured with `@allocated` after a warm call through a function barrier, in a
