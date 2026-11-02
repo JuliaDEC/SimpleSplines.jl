@@ -661,9 +661,11 @@ caller's buffer `buf`, which allocates nothing.
 contents on entry do not matter, and on return they are the local block of
 [`evaluate_all!`](@ref). Its element type is the type the sum is computed in, and the type of
 the result. It follows the point, not the basis or the coefficients: it must hold `typeof(x)`,
-or an `ArgumentError` is raised. A `Float64` basis with `Float64` coefficients at a `Float32`
-point takes a `Float32` buffer and returns a `Float32`. A `ForwardDiff.Dual` point takes a
-buffer of `Dual`s, and a `Float64` point does not take a `Float32` buffer.
+or an `ArgumentError` is raised. It must also have a floating-point element type, because the
+knot arithmetic is fractional: an `Int` buffer raises an `ArgumentError` even at an `Int` point.
+A `Float64` basis with `Float64` coefficients at a `Float32` point takes a `Float32` buffer and
+returns a `Float32`. A `ForwardDiff.Dual` point takes a buffer of `Dual`s, and a `Float64` point
+does not take a `Float32` buffer.
 
 A buffer belongs to one task. Two tasks that evaluate at once need a buffer each.
 
@@ -686,6 +688,9 @@ function evaluate!(buf::AbstractVector{B}, b::AbstractBSplineBasis{T},
         "see `local_width`"))
     promote_type(B, typeof(x)) === B || throw(ArgumentError(
         "evaluate! needs a buffer that holds the point type $(typeof(x)), got a buffer of $(B)"))
+    float(B) === B || throw(ArgumentError(
+        "evaluate! needs a buffer of a floating-point type, because the knot arithmetic is " *
+        "fractional, got a buffer of $(B)"))
     _evaluate_block!(buf, b, û, x, d)
 end
 
@@ -892,13 +897,14 @@ function evaluate_all!(values::AbstractVector{R}, b::AbstractBSplineBasis, x::Nu
 
     q = p - Int(d)
 
-    # The arithmetic runs in the real type of the element type of `values`: the cell is found
-    # above in the type of the basis, and the knots and the point are converted once the cell
-    # is known. A `Float64` basis into a `Float32` buffer therefore does a `Float32` sum, with
-    # no `Float64` intermediate to convert back. `real`, so that a complex buffer keeps real
-    # knots and the comparisons of the derivative step stay real.
+    # The recursion runs in the real type of the element type of `values`, but every knot
+    # difference is formed first, in the promotion of the type of the knots and the type of the
+    # point, and only the difference is converted. A `Float64` basis into a `Float32` buffer
+    # therefore does a `Float32` sum on exact distances: converting the knots and the point
+    # first would round two knots far from the origin to one `Float32` and divide by zero.
+    # `real`, so that a complex buffer keeps real knots and the comparisons of the derivative
+    # step stay real.
     Q = real(R)
-    x̃ = convert(Q, x̃)
 
     # De Boor's triangular scheme for the q+1 nonzero splines of degree q on span k.
     # values[1:q+1] holds φ_{k-q}^q .. φ_k^q afterwards.
@@ -908,8 +914,8 @@ function evaluate_all!(values::AbstractVector{R}, b::AbstractBSplineBasis, x::Nu
         for r in 1:j
             # right = kv[k+r] - x, left = kv[k+1-(j-r+1)] - ... written out below to keep
             # the index arithmetic of the standard form visible.
-            right = convert(Q, kv[k + r]) - x̃
-            left = x̃ - convert(Q, kv[k + 1 - j + r - 1])
+            right = convert(Q, kv[k + r] - x̃)
+            left = convert(Q, x̃ - kv[k + 1 - j + r - 1])
             temp = values[r] / (right + left)
             values[r] = saved + right * temp
             saved = left * temp

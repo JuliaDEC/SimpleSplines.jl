@@ -40,12 +40,18 @@ no new rule for them. A `Float64` point is unchanged: same type, same value, sam
 Measured, the `@allocated` bytes are identical before and after for the one-dimensional,
 tensor-product, recombined and polar forms, and the timings are equal within noise.
 `evaluate!` computes in the buffer's type and returns it. The buffer must hold `typeof(x)`
-(`eltype(x)` for the tensor-product form), or an `ArgumentError` is raised. So a `Float64` basis
-with `Float64` coefficients at a `Float32` point works in a `Float32` buffer. It returns a
-`Float32` and allocates 0 bytes, measured with `@allocated` after a warm call on a cubic clamped
-basis. A `Float64` point into a `Float32` buffer raises, and so does a `ForwardDiff.Dual` point
-into a `Float64` buffer. The allocating forms stay,
-and build their buffers and call these.
+(`eltype(x)` for the tensor-product form), or an `ArgumentError` is raised. It must also have a
+floating-point element type, because the knot arithmetic is fractional: an `Int` buffer raises an
+`ArgumentError` even at an `Int` point, where the allocating form returns a `Float64`. So a
+`Float64` basis with `Float64` coefficients at a `Float32` point works in a `Float32` buffer. It
+returns a `Float32` and allocates 0 bytes, measured with `@allocated` after a warm call on a cubic
+clamped basis. A `Float64` point into a `Float32` buffer raises, and so does a `ForwardDiff.Dual`
+point into a `Float64` buffer. The allocating forms stay, and build their buffers and call these.
+`evaluate_all!` forms each difference of a knot and the point in the promotion of their own types,
+and converts only the difference to the buffer type. A `Float64` basis on
+`UniformMesh(8, 1e8 .. (1e8 + 8))` at the `Float32` point `1e8` into a `Float32` buffer therefore
+returns the value of the span. The knots `1e8` and `1e8 + 1` are the same `Float32`, so converting
+them before the subtraction divides by zero and returns `NaN`.
 
 Bytes per call, measured with `@allocated` after a warm call through a function barrier, in a
 cold process on Julia 1.13.3, on `cb82e6f` and on this release. The one-dimensional basis is
@@ -68,21 +74,24 @@ before, because each builds two buffers of the largest intermediate array, and `
 also the buffers of the mass solve. `mass_solve!` on a `KroneckerMass` checks the lengths of `y`
 and `x` before it copies `x`, and raises a `DimensionMismatch` for a `y` or an `x` whose length
 is not that of the operator. Where the element types of the arguments are equal, the results of
-the allocating forms are bit-for-bit those of `cb82e6f`. The three-argument `l2_projection!` now
+the allocating forms are bit-for-bit those of `cb82e6f`. The three-argument `l2_projection!`
 contracts in `eltype(û)`, not in the promoted type of the quadrature and the sample, so where
-these types differ its result can differ from that of `cb82e6f` by the round-off of the narrower
-type.
+these types differ and the call runs, its result can differ from that of `cb82e6f` by the round-off of the narrower type. A `Float32` `û` does not run on a
+`Float64` quadrature with a periodic axis on a `UniformMesh`, in `cb82e6f` and in this release: the
+`CirculantMass` factor raises a `MethodError` in its `Float64` FFT plan (known issue K7). A periodic
+axis on a `GradedMesh` runs.
 
 `ForwardDiff` joins the test dependencies: the tests evaluate with `ForwardDiff.Dual` arguments
 and buffers, which also allocate nothing.
 
 ### Bug Fixes
 
-`mass_solve!` on a `KroneckerMass`, in the three-argument form and so in `ldiv!` and `\`, accepted
-an `x` shorter than `y` in 0.3.4, with no error. It copied `x` into the start of `y` and solved the
-whole of `y`, so the solve ran on whatever the rest of `y` held. It now raises a
-`DimensionMismatch` for an `x` whose length is not that of `y`. This fixes known issue K8. Earlier
-releases were not checked.
+`mass_solve!(y, op, x)` on a `KroneckerMass`, and so `ldiv!(y, op, x)`, accepted an `x` shorter
+than `y` in 0.3.4, with no error. It copied `x` into the start of `y` and solved the whole of `y`,
+so the solve ran on whatever the rest of `y` held. It raises a `DimensionMismatch` for an `x` whose
+length is not that of `y`. `\` is not affected: it builds its output with `similar(x)`, and a
+wrong-length `x` raises a `DimensionMismatch` there in 0.3.4 and in this release. This fixes known
+issue K8. Earlier releases were not checked.
 
 `mass_operator` of a periodic basis on a `UniformMesh`, and `CirculantMass` itself, raised
 `MethodError: … plan_rfft … is ambiguous` whenever FFTA 0.3.2 or later was loaded beside FFTW.

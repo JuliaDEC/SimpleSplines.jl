@@ -137,6 +137,41 @@ end
         @test startswith(message(() -> evaluate!(zeros(w), b, û, dual(0.37))),
             "ArgumentError: evaluate! needs a buffer that holds the point type $(Dual12), " *
             "got a buffer of Float64")
+        # an integer buffer cannot hold the fractional knot arithmetic, even at an Int point,
+        # where the allocating form returns a Float64
+        @test_throws ArgumentError evaluate!(zeros(Int, w), b, û, 0)
+        @test startswith(message(() -> evaluate!(zeros(Int, w), b, û, 0)),
+            "ArgumentError: evaluate! needs a buffer of a floating-point type, because the " *
+            "knot arithmetic is fractional, got a buffer of Int64")
+        @test_throws ArgumentError evaluate!(zeros(Int, w), Spline(b, û), 0)
+        @test evaluate(b, û, 0) isa Float64
+        # an Int point does take a floating-point buffer
+        @test evaluate!(zeros(w), b, û, 0) == evaluate(b, û, 0)
+    end
+end
+
+@testset "$(rpad("evaluate! into a narrow buffer subtracts the knots before narrowing",76))" begin
+    # Two knots 1 apart at 1e8 are one Float32. The distances are exact in the Float64 basis,
+    # so the Float32 result is the Float64 one, rounded.
+    b = BSplineBasis(UniformMesh(8, 1.0e8 .. (1.0e8 + 8)), 3)
+    û = collect(1.0:nbasis(b))
+    buf = zeros(Float32, local_width(b))
+    for x in (Float32(1.0e8), Float32(1.0e8 + 8)), d in 0:2
+
+        v = @inferred evaluate!(buf, b, û, x, d)
+        @test v isa Float32
+        @test isfinite(v)
+        @test isapprox(v, Float32(evaluate(b, û, Float64(x), d)); rtol = 8 * eps(Float32),
+            atol = 8 * eps(Float32) * maximum(abs, û))
+        @test isfinite(evaluate(b, û, x, d))
+    end
+    # an interior point, where the Float32 grid is fine enough to hold it
+    b = BSplineBasis(UniformMesh(8, 1.0e6 .. (1.0e6 + 8)), 3)
+    x = Float32(1.0e6 + 3.5)
+    for d in 0:2
+        v = evaluate!(zeros(Float32, local_width(b)), b, û, x, d)
+        @test isapprox(v, Float32(evaluate(b, û, Float64(x), d)); rtol = 8 * eps(Float32),
+            atol = 8 * eps(Float32) * maximum(abs, û) * 8^d)
     end
 end
 
@@ -373,6 +408,14 @@ end
             @test startswith(message(() -> evaluate!(narrow, B, û, first(points))),
                 "ArgumentError: evaluate! needs buffers that hold the point type Float64, " *
                 "got buffers of Float32")
+            # integer buffers, which cannot hold the fractional knot arithmetic, even at an
+            # Int point
+            ints = map(w -> zeros(Int, w), local_width(B))
+            xi = ntuple(_ -> 0, D)
+            @test_throws ArgumentError evaluate!(ints, B, û, xi)
+            @test startswith(message(() -> evaluate!(ints, B, û, xi)),
+                "ArgumentError: evaluate! needs buffers of a floating-point type, because " *
+                "the knot arithmetic is fractional, got buffers of Int64")
         end
     end
 end

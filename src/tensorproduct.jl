@@ -234,8 +234,9 @@ which allocates nothing.
 their contents on entry do not matter, and on return they are the blocks of
 [`evaluate_all!`](@ref). Their element type is the type the sum is computed in, and the type of
 the result. It follows the point, not the basis or the coefficients: it must hold `eltype(x)`,
-or an `ArgumentError` is raised. A `Float64` basis at a `Float32` point takes `Float32`
-buffers and returns a `Float32`.
+or an `ArgumentError` is raised. It must also have a floating-point element type, because the
+knot arithmetic is fractional: `Int` buffers raise an `ArgumentError` even at an `Int` point. A
+`Float64` basis at a `Float32` point takes `Float32` buffers and returns a `Float32`.
 
 The buffers belong to one task. Two tasks that evaluate at once need a tuple each.
 """
@@ -249,6 +250,9 @@ function evaluate!(bufs::NTuple{D, <:AbstractVector}, B::TensorProductBasis{T, D
     R = eltype(first(bufs))
     promote_type(R, eltype(x)) === R || throw(ArgumentError(
         "evaluate! needs buffers that hold the point type $(eltype(x)), got buffers of $(R)"))
+    float(R) === R || throw(ArgumentError(
+        "evaluate! needs buffers of a floating-point type, because the knot arithmetic is " *
+        "fractional, got buffers of $(R)"))
 
     # Only the local block contributes, so this is the fast path rather than a sum over the
     # whole array. `evaluate_all!` gives the p_d+1 nonzero factors on each axis; their outer
