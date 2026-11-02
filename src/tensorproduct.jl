@@ -402,15 +402,14 @@ The tuple of one-dimensional [`MassOperator`](@ref)s, axis order.
 """
 mass_factors(op::KroneckerMass) = op.ops
 
-# The extents of a D-dimensional array before and after axis k, for the three-way reshape the
-# per-axis loops below work on.
+# The extents of a D-dimensional array before and after axis k, for the three-way
+# (before, N_k, after) reading of the array that the per-axis loops below work on.
 #
 # Written as a loop rather than as `prod(dims[1:(k-1)]; init = 1)`. Slicing a tuple with a
 # runtime `k` gives a tuple whose *length* is not known to inference, so the product infers as
-# `Any`, the `reshape` built from it infers as `Any`, and every element access in the loops
-# that follow becomes a dynamic dispatch. Indexing the tuple one element at a time keeps `k`
-# a run-time value and the result an `Int`. Measured on a 160x160 array, the difference in
-# `_scale_along!` is 1862 us and 2.9 MB against 7.5 us and no allocation.
+# `Any`, the linear indices built from it infer as `Any`, and every element access in the
+# loops that follow becomes a dynamic dispatch. Indexing the tuple one element at a time keeps
+# `k` a run-time value and the result an `Int`.
 @inline function _splitdims(dims::NTuple{D, Int}, k::Integer) where {D}
     before = 1
     after = 1
