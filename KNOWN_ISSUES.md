@@ -71,3 +71,17 @@
   `Float32` spans throw on #39 and no `Float64` span does.
 - **kind:** defect
 - **found:** 2026-10-31; older than #39
+
+### K6 · A periodic basis gives `NaN` derivatives to a `ForwardDiff.Dual` at `a` and at `b`
+
+- **location:** `src/bspline.jl`, `_reduce_argument(b::PeriodicBSplineBasis, x)`
+- **evidence:** the argument is reduced as `a + mod(x - a, L)`, and ForwardDiff's `mod` gives a
+  `NaN` partial where `x - a` is a multiple of `L`: `mod(Dual{Nothing}(1.0, 1.0), 1.0)` is
+  `Dual{Nothing}(0.0,NaN)`. With `b = BSplineBasis(UniformMesh(8, 0.0 .. 1.0), 3, Periodic())`
+  and `û = collect(1.0:8)` on `cb82e6f`, `evaluate(b, û, Dual{Nothing}(1.0, 1.0))` and
+  `evaluate(b, û, Dual{Nothing}(0.0, 1.0))` both give `Dual{Nothing}(6.999999999999999,NaN)`,
+  while `Dual{Nothing}(prevfloat(1.0), 1.0)` gives `Dual{Nothing}(7.0,8.000000000000014)`.
+  `evaluate_all(b, Dual{Nothing}(1.0, 1.0))` gives `NaN` partials in all four entries. The values
+  are right; only the derivatives are lost.
+- **kind:** defect
+- **found:** 2026-11-02

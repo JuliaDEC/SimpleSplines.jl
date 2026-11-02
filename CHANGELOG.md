@@ -5,6 +5,44 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — targeting 0.3.5
+
+### New Features
+
+The hot evaluation, solve and projection paths take buffers that the caller holds, and then
+allocate nothing. `evaluate!(buf, b, û, x, d)` and `evaluate!(buf, s, x, d)` evaluate a spline
+on a one-dimensional basis with a buffer of `local_width(b)` entries; `evaluate!(bufs, B, û, x,
+d)` does it on a `TensorProductBasis` with one buffer per axis. `mass_workspace(op, T)` and
+`mass_solve!(y, op, x, work)` solve with a `KroneckerMass`; `contract_workspace(q, T)`,
+`contract!(L, q, F, work, d)` and `l2_projection!(û, q, F, work)` contract and project on a
+`TensorProductQuadrature`. Each buffer and workspace belongs to one task. The allocating forms
+stay, and build their buffers and call these.
+
+Bytes per call, measured with `@allocated` after a warm call through a function barrier, in a
+cold process on Julia 1.13.3, on `cb82e6f` and on this release. The one-dimensional basis is
+clamped and cubic on 8 cells; the two-dimensional one is periodic × clamped, cubic, on 8 × 8
+cells. Each pair is `Float64` / `Float32`.
+
+| call | `cb82e6f` | the allocating form now | the caller-buffer form |
+|:--|--:|--:|--:|
+| `evaluate(b, û, x, d)` | 96 / 80 | 96 / 80 | 0 / 0 |
+| `evaluate(B, û, x, d)` | 192 / 160 | 192 / 160 | 0 / 0 |
+| `mass_solve!(y, op, x)` | 1232 / 1104 | 544 / 416 | 0 / 0 |
+| `contract(q, F, d)` | 24064 / 13536 | 30128 / 15328 | 0 / 0 |
+| `l2_projection!(û, q, F)` | 25296 / 14640 | 29344 / 14880 | 0 / 0 |
+
+The solve along the axes of a `KroneckerMass` and the weighting and contraction along the axes
+of `contract` are unrolled over the tuple of axes, so an operator or a quadrature whose axes have
+different types no longer dispatches dynamically: that is the drop of the three-argument
+`mass_solve!` on the periodic × clamped basis. The allocating `contract` and `l2_projection!`
+allocate more than before, because they build the whole workspace: two buffers of the largest
+intermediate array, and the buffers of the mass solve. `mass_solve!` on a `KroneckerMass` checks
+the length of `y` before it copies `x`, and raises a `DimensionMismatch` for a `y` of the wrong
+length. The results of the allocating forms are bit-for-bit those of `cb82e6f`.
+
+`ForwardDiff` joins the test dependencies: the tests evaluate with `ForwardDiff.Dual` arguments
+and buffers, which also allocate nothing.
+
 ## [0.3.4] — 2026-10-31
 
 ### Bug Fixes

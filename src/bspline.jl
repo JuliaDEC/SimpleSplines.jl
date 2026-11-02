@@ -625,22 +625,55 @@ end
 
 function evaluate(b::AbstractBSplineBasis{T}, û::AbstractVector{S}, x::Number,
         d::Integer = 0) where {T, S}
+    R = _evaltype(promote_type(T, S), typeof(x))
+    evaluate!(Vector{R}(undef, local_width(b)), b, û, x, d)
+end
+
+@doc raw"""
+    evaluate!(buf, b::AbstractBSplineBasis, û::AbstractVector, x::Number, d = 0)
+    evaluate!(buf, s::Spline, x::Number, d = 0)
+
+The value of [`evaluate`](@ref)`(b, û, x, d)`, or of `evaluate(s, x, d)`, computed in the
+caller's buffer `buf`, which allocates nothing.
+
+`buf` must have [`local_width`](@ref)`(b)` entries, or a `DimensionMismatch` is raised; its
+contents on entry do not matter, and on return they are the local block of
+[`evaluate_all!`](@ref). Its element type is the type the sum is accumulated in, so it must
+hold `promote_type(eltype(b), eltype(û), typeof(x))`: a `ForwardDiff.Dual` argument takes a
+buffer of `Dual`s.
+
+A buffer belongs to one task. Two tasks that evaluate at once need a buffer each.
+
+```jldoctest
+julia> b = BSplineBasis(UniformMesh(8, 0 .. 1), 3); û = collect(1.0:nbasis(b));
+
+julia> buf = zeros(local_width(b));
+
+julia> evaluate!(buf, b, û, 0.3, 1) == evaluate(b, û, 0.3, 1)
+true
+```
+"""
+function evaluate!(buf::AbstractVector, b::AbstractBSplineBasis, û::AbstractVector,
+        x::Number, d::Integer = 0)
     length(û) == nbasis(b) || throw(DimensionMismatch(
         "the coefficient vector has $(length(û)) entries but the basis has $(nbasis(b))"))
-    R = _evaltype(promote_type(T, S), typeof(x))
-    _evaluate_block!(Vector{R}(undef, local_width(b)), b, û, x, d)
+    w = local_width(b)
+    length(buf) == w || throw(DimensionMismatch(
+        "evaluate! needs a buffer of $(w) entries for this basis, got $(length(buf)); " *
+        "see `local_width`"))
+    _evaluate_block!(buf, b, û, x, d)
 end
 
 # The local-block sum, against a caller-supplied buffer. Only the block contributes, so this
 # is O(p) per point where summing `evaluate` over `eachindex(û)` is O(N).
 #
-# Split out so that a sweep over many points allocates one buffer for the sweep rather than
-# one per point. The buffer is the whole of the difference between this and BSplineKit at
-# small `n`, which reaches the block through the spline order carried in its *type* and can
-# therefore keep it on the stack; here the degree is a field, so the length is a run-time
-# value. Passing a `Val`-sized `MVector` instead was measured and does not help -- it halves
-# the allocation and returns the saving in dispatch, because `evaluate_all!` takes an
-# `AbstractVector` and the buffer escapes into it either way.
+# The buffer is the whole of the difference between this and BSplineKit at small `n`, which
+# reaches the block through the spline order carried in its *type* and can therefore keep it
+# on the stack; here the degree is a field, so the length is a run-time value. Passing a
+# `Val`-sized `MVector` instead was measured and does not help -- it halves the allocation and
+# returns the saving in dispatch, because `evaluate_all!` takes an `AbstractVector` and the
+# buffer escapes into it either way. The allocation-free path is therefore a buffer that the
+# caller holds, through `evaluate!`; a sweep over many points below holds one for the sweep.
 function _evaluate_block!(values::AbstractVector{R}, b::AbstractBSplineBasis,
         û::AbstractVector, x::Number, d::Integer) where {R}
     j₀ = evaluate_all!(values, b, x, d)
@@ -883,7 +916,8 @@ The allocating form of [`evaluate_all!`](@ref): returns `(j₀, values)` with a 
 buffer of [`local_width`](@ref) entries.
 
 Convenient at a call site that runs once. A particle loop should hold its own buffer and call
-[`evaluate_all!`](@ref), which allocates nothing.
+[`evaluate_all!`](@ref), which allocates nothing, or [`evaluate!`](@ref) for the value of a
+spline at the point.
 """
 function evaluate_all(b::AbstractBSplineBasis{T}, x::Number, d::Integer = 0) where {T}
     R = _evaltype(T, typeof(x))

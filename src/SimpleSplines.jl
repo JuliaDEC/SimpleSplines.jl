@@ -48,7 +48,7 @@ include("boundary.jl")
 
 export AbstractBSplineBasis, BSplineBasis, PeriodicBSplineBasis
 export BSplineDerivative, PeriodicBSplineDerivative
-export knotvector, evaluate, evaluate_all, evaluate_all!, mesh
+export knotvector, evaluate, evaluate!, evaluate_all, evaluate_all!, mesh
 export boundary, basis_index, findcell, local_width, polynomial_reproduction
 
 include("bspline.jl")
@@ -69,7 +69,8 @@ export mass_matrix, mass_factorization, stiffness_matrix, derivative_matrix,
 include("quadrature.jl")
 
 export TensorProductBasis, TensorProductQuadrature, KroneckerMass, ⊗
-export bases, quadratures, mass_factors, contract
+export bases, quadratures, mass_factors, mass_workspace, contract, contract!,
+       contract_workspace
 export quadrature_sample, quadrature_grid_size
 
 include("tensorproduct.jl")

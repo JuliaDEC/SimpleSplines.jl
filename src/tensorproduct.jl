@@ -212,14 +212,36 @@ end
 
 function evaluate(B::TensorProductBasis{T, D}, û::AbstractArray{S, D}, x,
         d::NTuple{D, Int} = ntuple(_ -> 0, D)) where {T, D, S}
+    R = _evaltype(promote_type(T, S), eltype(x))
+    bufs = ntuple(k -> Vector{R}(undef, local_width(B.bases[k])), D)
+    evaluate!(bufs, B, û, x, d)
+end
+
+@doc raw"""
+    evaluate!(bufs::NTuple{D,AbstractVector}, B::TensorProductBasis, û::AbstractArray, x,
+              d = ntuple(_ -> 0, D))
+
+The value of [`evaluate`](@ref)`(B, û, x, d)`, computed in the caller's per-axis buffers,
+which allocates nothing.
+
+`bufs[k]` must have `local_width(bases(B)[k])` entries, or a `DimensionMismatch` is raised;
+their contents on entry do not matter, and on return they are the blocks of
+[`evaluate_all!`](@ref). Their element type is the type the sum is accumulated in, so it must
+hold the promoted type of the basis, the coefficients and `x`.
+
+The buffers belong to one task. Two tasks that evaluate at once need a tuple each.
+"""
+function evaluate!(bufs::NTuple{D, <:AbstractVector{R}}, B::TensorProductBasis{T, D},
+        û::AbstractArray{S, D}, x, d::NTuple{D, Int} = ntuple(_ -> 0, D)) where {R, T, D, S}
     size(û) == size(B) || throw(DimensionMismatch(
         "the coefficient array is $(size(û)) but the basis is $(size(B))"))
-    R = _evaltype(promote_type(T, S), eltype(x))
+    widths = local_width(B)
+    map(length, bufs) == widths || throw(DimensionMismatch(
+        "evaluate! needs buffers of $(widths) entries on the axes, got $(map(length, bufs))"))
 
     # Only the local block contributes, so this is the fast path rather than a sum over the
     # whole array. `evaluate_all!` gives the p_d+1 nonzero factors on each axis; their outer
     # product against the corresponding block of û is the value.
-    bufs = ntuple(k -> Vector{R}(undef, local_width(B.bases[k])), D)
     j₀ = evaluate_all!(bufs, B, x, d)
 
     # `size(B, k)` reads `B.bases[k]`, and the axes need not have the same basis type, so
@@ -399,50 +421,112 @@ mass_factors(op::KroneckerMass) = op.ops
     return before, after
 end
 
-# Apply a one-dimensional operator along axis k of a D-dimensional array, in place. The array
-# is viewed as (before, N_k, after) and each fibre along the middle index is solved on its own.
+# Apply a one-dimensional operator along axis k of the D-dimensional array of size `dims`
+# that `A` holds in its linear order, in place. The array is read as (before, N_k, after) and
+# each fibre along the middle index is solved on its own. The linear index is computed rather
+# than taken from a `reshape`, because a `reshape` of an `Array` allocates its header.
 #
 # The fibre is copied into a contiguous buffer rather than passed as a view. A view into the
 # middle index of a three-way reshape has stride `before`, and an FFTW plan or a LAPACK banded
 # solve addresses only contiguous memory -- so the one-dimensional solve would stage such a
-# fibre through its own buffer in any case. The two buffers here are allocated once per axis
-# and reused across that axis's fibres, so the cost is O(D) buffers per call rather than one
-# pair per fibre.
-#
-# This adds no shared state of its own -- both buffers are local to the call -- but that is
-# not thread safety: a `CirculantMass` holds its own scratch vector, which `mass_solve!`
-# writes, so two threads applying the same operator would collide inside it.
+# fibre through its own buffer in any case. The two buffers `src` and `dst` have N_k entries
+# and are reused across the fibres of the axis. They can come from a caller's workspace, so
+# the copies keep their bounds checks.
 #
 # `f!` receives (out, op, in) with two *distinct* buffers, so a method that cannot alias its
 # arguments -- `mul!` -- needs no defensive copy of its own.
-function _apply_along!(f!, A::AbstractArray{T}, op, k::Integer) where {T}
-    dims = size(A)
+function _apply_along!(f!, A::AbstractArray, dims::NTuple{D, Int}, op, k::Integer,
+        src::AbstractVector, dst::AbstractVector) where {D}
     before, after = _splitdims(dims, k)
     nk = dims[k]
-    A3 = reshape(A, before, nk, after)
-    src = Vector{T}(undef, nk)
-    dst = Vector{T}(undef, nk)
+    o = firstindex(A) - 1
     for j in 1:after, i in 1:before
 
-        @inbounds for r in 1:nk
-            src[r] = A3[i, r, j]
+        base = o + i + before * nk * (j - 1)
+        for r in 1:nk
+            src[r] = A[base + before * (r - 1)]
         end
         f!(dst, op, src)
-        @inbounds for r in 1:nk
-            A3[i, r, j] = dst[r]
+        for r in 1:nk
+            A[base + before * (r - 1)] = dst[r]
         end
     end
     return A
 end
 
-function mass_solve!(y::AbstractArray, op::KroneckerMass{T, D},
-        x::AbstractArray) where {T, D}
+# The form with buffers of its own, allocated once for the axis.
+function _apply_along!(f!, A::AbstractArray{T}, op, k::Integer) where {T}
+    nk = size(A, k)
+    _apply_along!(f!, A, size(A), op, k, Vector{T}(undef, nk), Vector{T}(undef, nk))
+end
+
+# The solves along the axes, one axis per call. Recursion on the tuples rather than a loop
+# over `1:D`: the axes need not have the same operator type, and indexing that tuple with a
+# loop variable dispatches dynamically, which allocates.
+_solve_axes!(y, dims, ::Tuple{}, ::Tuple{}, ::Tuple{}, k) = y
+function _solve_axes!(y, dims, ops::Tuple, src::Tuple, dst::Tuple, k)
+    _apply_along!(mass_solve!, y, dims, first(ops), k, first(src), first(dst))
+    _solve_axes!(y, dims, Base.tail(ops), Base.tail(src), Base.tail(dst), k + 1)
+end
+
+struct KroneckerMassWorkspace{T, D}
+    src::NTuple{D, Vector{T}}
+    dst::NTuple{D, Vector{T}}
+end
+
+Base.eltype(::KroneckerMassWorkspace{T}) where {T} = T
+
+@doc raw"""
+    mass_workspace(op::KroneckerMass, T)
+    mass_solve!(y, op::KroneckerMass, x, work)
+
+A workspace of element type `T` for [`mass_solve!`](@ref) on `op`, and the solve that uses it,
+which allocates nothing.
+
+The workspace holds two buffers of `size(mass_factors(op)[k], 1)` entries for each axis `k`.
+The solve takes `y` and `x` as arrays of the size of the tensor-product basis, or as vectors of
+`size(op, 1)` entries, and `y === x` is allowed. A `y` of another length raises a
+`DimensionMismatch`; a workspace whose element type is not `eltype(y)`, or whose buffer
+lengths do not fit `op`, raises an `ArgumentError`. `mass_solve!(y, op, x)` builds a
+workspace of `eltype(y)` on each call.
+
+A workspace belongs to one task. It does not make the operator safe for two tasks: a
+[`CirculantMass`](@ref) factor holds a scratch vector of its own, which every solve writes.
+
+```jldoctest
+julia> B = BSplineBasis(UniformMesh(8, 0 .. 1), 3) ⊗ BSplineBasis(UniformMesh(6, 0 .. 1), 2);
+
+julia> op = mass_operator(TensorProductQuadrature(B)); x = randn(size(B)...);
+
+julia> work = mass_workspace(op, Float64);
+
+julia> mass_solve!(similar(x), op, x, work) == op \ x
+true
+```
+"""
+function mass_workspace(op::KroneckerMass{T, D}, ::Type{S}) where {T, D, S}
+    KroneckerMassWorkspace{S, D}(map(n -> Vector{S}(undef, n), op.dims),
+        map(n -> Vector{S}(undef, n), op.dims))
+end
+
+function mass_solve!(y::AbstractArray, op::KroneckerMass{T, D}, x::AbstractArray,
+        work::KroneckerMassWorkspace) where {T, D}
+    eltype(work) === eltype(y) || throw(ArgumentError(
+        "the workspace has element type $(eltype(work)) but the array has element type " *
+        "$(eltype(y))"))
+    (map(length, work.src) == op.dims && map(length, work.dst) == op.dims) ||
+        throw(ArgumentError(
+            "the workspace has buffers of lengths $(map(length, work.src)) but the operator " *
+            "needs $(op.dims)"))
+    length(y) == prod(op.dims) || throw(DimensionMismatch(
+        "the array has $(length(y)) entries but the operator acts on $(op.dims)"))
     y === x || copyto!(y, x)
-    Y = reshape(y, op.dims)
-    for k in 1:D
-        _apply_along!(mass_solve!, Y, op.ops[k], k)
-    end
+    _solve_axes!(y, op.dims, op.ops, work.src, work.dst, 1)
     return y
+end
+
+function mass_solve!(y::AbstractArray, op::KroneckerMass, x::AbstractArray)
+    mass_solve!(y, op, x, mass_workspace(op, eltype(y)))
 end
 
 function LinearAlgebra.mul!(y::AbstractArray, op::KroneckerMass{T, D},
@@ -654,44 +738,155 @@ the ``O(N \prod_k n_k n_{q,k})`` of forming each entry by its own quadrature loo
 """
 function contract(q::TensorProductQuadrature{T, D}, F::AbstractArray{S, D},
         d::NTuple{D, Int} = ntuple(_ -> 0, D)) where {T, D, S}
+    R = promote_type(T, S)
+    L = Array{R}(undef, size(q.basis))
+    contract!(L, q, F, contract_workspace(q, R), d)
+end
+
+struct ContractWorkspace{T, MW <: KroneckerMassWorkspace{T}}
+    a::Vector{T}
+    b::Vector{T}
+    mass::MW
+end
+
+Base.eltype(::ContractWorkspace{T}) where {T} = T
+
+# The largest intermediate array of the contraction. Step k reads an array of
+# N_1 ⋯ N_(k-1) Q_k ⋯ Q_D entries and writes one of N_1 ⋯ N_k Q_(k+1) ⋯ Q_D.
+function _contract_length(q::TensorProductQuadrature{T, D}) where {T, D}
+    Qs = quadrature_grid_size(q)
+    Ns = size(q.basis)
+    n = m = prod(Qs)
+    for k in 1:D
+        m = m ÷ Qs[k] * Ns[k]
+        n = max(n, m)
+    end
+    return n
+end
+
+"""
+    contract_workspace(q::TensorProductQuadrature, T)
+
+A workspace of element type `T` for [`contract!`](@ref) and the four-argument
+[`l2_projection!`](@ref) on `q`. A workspace belongs to one task.
+"""
+function contract_workspace(q::TensorProductQuadrature, ::Type{S}) where {S}
+    n = _contract_length(q)
+    ContractWorkspace(Vector{S}(undef, n), Vector{S}(undef, n),
+        mass_workspace(q.mass, S))
+end
+
+@doc raw"""
+    contract!(L, q::TensorProductQuadrature, F, work, d = ntuple(_ -> 0, D))
+    l2_projection!(û, q::TensorProductQuadrature, F::AbstractArray, work)
+
+The forms of [`contract`](@ref) and [`l2_projection!`](@ref) that take a workspace from
+[`contract_workspace`](@ref), and allocate nothing.
+
+`contract!` writes [`contract`](@ref)`(q, F, d)` into `L`, of size `size(basis(q))`;
+`l2_projection!` writes `l2_projection(q, F)` into `û`. `F` is the sample on the quadrature
+grid and is not changed. The workspace holds two buffers for the intermediate arrays of the
+contraction and a [`mass_workspace`](@ref) of `mass_operator(q)` for the solve. Wrong sizes
+of `L`, `û` or `F` raise the `DimensionMismatch` of the allocating forms; a workspace whose
+element type is not `eltype(L)`, or `eltype(û)`, or whose sizes do not fit `q`, raises an
+`ArgumentError`. `contract` builds a workspace on each call, and so does the three-argument
+`l2_projection!`.
+
+A workspace belongs to one task. It does not make the quadrature safe for two tasks: a
+[`CirculantMass`](@ref) factor of its mass operator holds a scratch vector of its own.
+
+```jldoctest
+julia> B = BSplineBasis(UniformMesh(8, 0 .. 1), 3) ⊗ BSplineBasis(UniformMesh(6, 0 .. 1), 2);
+
+julia> q = TensorProductQuadrature(B); F = quadrature_sample(q, x -> x[1] * x[2]);
+
+julia> work = contract_workspace(q, Float64); L = zeros(size(B)...);
+
+julia> contract!(L, q, F, work) == contract(q, F)
+true
+```
+"""
+function contract!(L::AbstractArray, q::TensorProductQuadrature{T, D},
+        F::AbstractArray{S, D}, work::ContractWorkspace,
+        d::NTuple{D, Int} = ntuple(_ -> 0, D)) where {T, D, S}
     size(F) == quadrature_grid_size(q) || throw(DimensionMismatch(
         "the sample is $(size(F)) but the quadrature grid is $(quadrature_grid_size(q))"))
+    size(L) == size(q.basis) || throw(DimensionMismatch(
+        "the load array is $(size(L)) but the basis is $(size(q.basis))"))
+    eltype(work) === eltype(L) || throw(ArgumentError(
+        "the workspace has element type $(eltype(work)) but the load array has element " *
+        "type $(eltype(L))"))
+    n = _contract_length(q)
+    (length(work.a) == n && length(work.b) == n) || throw(ArgumentError(
+        "the workspace holds buffers of $(length(work.a)) entries but this quadrature " *
+        "needs $(n)"))
 
-    R = promote_type(T, S)
-
-    # A copy, always. `convert(Array{R}, F)` is the *identity* when `F` is already an
-    # `Array{R}`, and the weighting below is in place -- so converting here would scale the
-    # caller's own sample by the quadrature weights and leave it that way. `F` is very often
-    # exactly such an array, since `quadrature_sample` returns one.
-    B = Array{R}(undef, size(F))
-    copyto!(B, F)
+    # A copy, always: the weighting below is in place, and `F` is the caller's sample.
+    copyto!(work.a, firstindex(work.a), F, firstindex(F), length(F))
 
     # The weights of every axis, applied once, before any contraction. Doing it here rather
     # than inside the loop keeps the weighting a single elementwise pass and makes the
     # per-axis step a plain matrix product.
-    for k in 1:D
-        w = quadrature_weights(q.quadratures[k])
-        _scale_along!(B, w, k)
-    end
+    _scale_axes!(work.a, size(F), q.quadratures, 1)
 
-    for k in 1:D
-        Φ = basis_values(q.quadratures[k], d[k])
-        Q = size(Φ, 2)
-        M = reshape(B, Q, :)
-        C = Φ * M                       # (N_k, rest)
-        B = permutedims(C)              # (rest, N_k) -- cycles this axis to the back
-    end
-
-    return reshape(B, size(q.basis))
+    C = _contract_axes!(work.a, work.b, length(F), q.quadratures, d)
+    copyto!(L, firstindex(L), C, firstindex(C), length(L))
+    return L
 end
 
-function _scale_along!(A::AbstractArray, w::AbstractVector, k::Integer)
-    dims = size(A)
+# The weighting and the contraction, one axis per call. Recursion on the tuple rather than a
+# loop over `1:D`, for the reason of `_solve_axes!`: the axes need not have the same
+# quadrature type.
+_scale_axes!(A, dims, ::Tuple{}, k) = A
+function _scale_axes!(A, dims, qs::Tuple, k)
+    _scale_along!(A, dims, quadrature_weights(first(qs)), k)
+    _scale_axes!(A, dims, Base.tail(qs), k + 1)
+end
+
+# `src` holds an array of `n` entries whose first axis is the quadrature axis of `first(qs)`.
+# Each step writes `Φ * M` into `dst` transposed, as a (rest, N_k) array, which cycles the
+# contracted axis to the back; after the last step the axes are back in order, and the
+# buffer that holds the result is returned.
+_contract_axes!(src, dst, n, ::Tuple{}, ::Tuple{}) = src
+function _contract_axes!(src, dst, n, qs::Tuple, d::Tuple)
+    Φ = basis_values(first(qs), first(d))
+    N, Q = size(Φ)
+    rest = n ÷ Q
+    _contract_axis!(dst, Φ, src, rest)
+    _contract_axes!(dst, src, rest * N, Base.tail(qs), Base.tail(d))
+end
+
+# dst[r, i] = Σ_q Φ[i, q] src[q, r], with `src` read as (Q, rest) and `dst` written as
+# (rest, N). The sum runs over the stored entries of each column of Φ, with `muladd`, in the
+# order of SparseArrays' sparse-times-dense product, so the result is the one that
+# `permutedims(Φ * M)` gives.
+function _contract_axis!(dst::AbstractVector, Φ::SparseMatrixCSC, src::AbstractVector,
+        rest::Integer)
+    N, Q = size(Φ)
+    rows = rowvals(Φ)
+    vals = nonzeros(Φ)
+    @inbounds for r in 1:rest
+        for i in 1:N
+            dst[r + rest * (i - 1)] = zero(eltype(dst))
+        end
+        for c in 1:Q
+            s = src[c + Q * (r - 1)]
+            for t in nzrange(Φ, c)
+                i = r + rest * (rows[t] - 1)
+                dst[i] = muladd(vals[t], s, dst[i])
+            end
+        end
+    end
+    return dst
+end
+
+# Scale axis k of the array of size `dims` that `A` holds in its linear order by `w`.
+function _scale_along!(A::AbstractVector, dims::NTuple{D, Int}, w::AbstractVector,
+        k::Integer) where {D}
     before, after = _splitdims(dims, k)
     nk = dims[k]
-    A3 = reshape(A, before, nk, after)
     @inbounds for j in 1:after, r in 1:nk, i in 1:before
-        A3[i, r, j] *= w[r]
+        A[i + before * ((r - 1) + nk * (j - 1))] *= w[r]
     end
     return A
 end
@@ -699,12 +894,15 @@ end
 @doc raw"""
     l2_projection(q::TensorProductQuadrature, f)
     l2_projection!(û, q::TensorProductQuadrature, f)
+    l2_projection!(û, q::TensorProductQuadrature, F::AbstractArray, work)
 
 The coefficient array of the ``L^2`` projection of `f` onto the tensor-product spline space,
 ``\hat{u} = \mathbb{M}^{-1} \int_\Omega f \, \Phi_I \, dx``.
 
 `f` may be a function of a `D`-tuple of coordinates, or an array already sampled on the
-quadrature grid — see [`quadrature_sample`](@ref). The result has size `size(basis(q))`.
+quadrature grid — see [`quadrature_sample`](@ref). The result has size `size(basis(q))`. The
+form with a workspace from [`contract_workspace`](@ref) takes the sample and allocates
+nothing.
 
 ```jldoctest
 julia> B = BSplineBasis(UniformMesh(16, 0 .. 1), 3) ⊗ BSplineBasis(UniformMesh(16, 0 .. 1), 3);
@@ -732,10 +930,15 @@ function l2_projection(q::TensorProductQuadrature{T, D}, f) where {T, D}
 end
 
 function l2_projection!(û::AbstractArray, q::TensorProductQuadrature{T, D}, f) where {T, D}
+    F = f isa AbstractArray ? f : quadrature_sample(q, f)
+    l2_projection!(û, q, F, contract_workspace(q, eltype(û)))
+end
+
+function l2_projection!(û::AbstractArray, q::TensorProductQuadrature{T, D},
+        F::AbstractArray, work::ContractWorkspace) where {T, D}
     size(û) == size(q.basis) || throw(DimensionMismatch(
         "the coefficient array is $(size(û)) but the basis is $(size(q.basis))"))
-    F = f isa AbstractArray ? f : quadrature_sample(q, f)
-    copyto!(û, contract(q, F))
-    mass_solve!(û, mass_operator(q), û)
+    contract!(û, q, F, work)
+    mass_solve!(û, mass_operator(q), û, work.mass)
     return û
 end

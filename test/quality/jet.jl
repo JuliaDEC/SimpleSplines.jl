@@ -70,6 +70,31 @@ if isdefined(JET, :JET_AVAILABLE) ? JET.JET_AVAILABLE : JET.JET_LOADABLE
         (S2, typeof(opb), Vector{Float64}); target_modules = (SimpleSplines,))))
     @test isempty(JET.get_reports(JET.report_opt(mass_solve!,
         (S2, typeof(opc), Vector{Float64}); target_modules = (SimpleSplines,))))
+
+    # test/integration/workspaces.jl: the caller-held buffers and workspaces, on a periodic ×
+    # clamped product, whose axes differ in type
+    m8 = UniformMesh(8, 0 .. 1)
+    for b1 in (BSplineBasis(m8, 3), BSplineBasis(m8, 3, Periodic()),
+        BSplineBasis(m8, 3, Natural()))
+        @test isempty(JET.get_reports(JET.report_opt(evaluate!,
+            (Vector{Float64}, typeof(b1), Vector{Float64}, Float64, Int);
+            target_modules = (SimpleSplines,))))
+    end
+    Bw = BSplineBasis(m8, 3, Periodic()) ⊗ BSplineBasis(UniformMesh(8, -1 .. 2), 3)
+    qw = TensorProductQuadrature(Bw)
+    @test isempty(JET.get_reports(JET.report_opt(evaluate!,
+        (NTuple{2, Vector{Float64}}, typeof(Bw), Matrix{Float64}, NTuple{2, Float64},
+            NTuple{2, Int}); target_modules = (SimpleSplines,))))
+    workw = contract_workspace(qw, Float64)
+    @test isempty(JET.get_reports(JET.report_opt(mass_solve!,
+        (Matrix{Float64}, typeof(mass_operator(qw)), Matrix{Float64}, typeof(workw.mass));
+        target_modules = (SimpleSplines,))))
+    @test isempty(JET.get_reports(JET.report_opt(contract!,
+        (Matrix{Float64}, typeof(qw), Matrix{Float64}, typeof(workw), NTuple{2, Int});
+        target_modules = (SimpleSplines,))))
+    @test isempty(JET.get_reports(JET.report_opt(l2_projection!,
+        (Matrix{Float64}, typeof(qw), Matrix{Float64}, typeof(workw));
+        target_modules = (SimpleSplines,))))
 else
     @test_skip "JET does not work on this Julia version"  # aviatesk/JET.jl#681
 end
