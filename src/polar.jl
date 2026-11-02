@@ -450,6 +450,12 @@ end
 The mixed derivative ``\partial_s^{d_1} \partial_\theta^{d_2}`` at `x = (s, θ)` of the `k`-th
 basis function, or of the spline with coefficient vector `û`.
 
+The type of the result follows the point, `eltype(x)`, as it does for [`evaluate!`](@ref): a
+`Float64` basis at a `Float32` point returns a `Float32`. Complex coefficients make the result
+complex in that type. A point that is not a floating-point type, such as an `Int` or a
+`Rational`, cannot hold the result, so the promotion of the type of the basis and the type of
+the point stands.
+
 ```jldoctest
 julia> B = PolarSplineBasis(BSplineBasis(UniformMesh(8, 0 .. 1), 3),
                             PeriodicBSplineBasis(UniformMesh(16, 0 .. 2π), 3));
@@ -479,7 +485,7 @@ function evaluate(B::PolarSplineBasis{T}, k::Integer, x,
     for t in nzrange(R, Int(k))
         v += vals[t] * evaluate(B.parent, rows[t], x, d)
     end
-    return v
+    return convert(_resulttype(T, eltype(x)), v)
 end
 
 function evaluate(B::PolarSplineBasis{T}, û::AbstractVector{S}, x,
@@ -504,7 +510,9 @@ Base.getindex(B::PolarSplineBasis, x, k) = evaluate(B, k, x)
     evaluate_all(B::PolarSplineBasis, x, d = (0, 0))
 
 The basis functions that are nonzero at `x = (s, θ)`, as a pair `(idx, values)` of the global
-indices and the matching values of ``\partial_s^{d_1} \partial_\theta^{d_2} \Psi``.
+indices and the matching values of ``\partial_s^{d_1} \partial_\theta^{d_2} \Psi``. The element
+type of `values` is the type of the point, `eltype(x)`, unless that is not a floating-point
+type: then it is the promotion of the type of the basis and the type of the point.
 
 Unlike the tensor-product and one-dimensional forms, which return the **first index** of a
 contiguous block, this returns the indices themselves. The polar index set is not a product
@@ -530,7 +538,10 @@ julia> length(idx), sum(vals) ≈ 1
 function evaluate_all(B::PolarSplineBasis{T}, x, d::NTuple{2, Int} = (0, 0)) where {T}
     radial, angular = bases(B.parent)
     Ns = nbasis(radial)
-    R = _evaltype(T, eltype(x))
+    R = _resulttype(T, eltype(x))
+    # The pole sums mix the blocks with the `T` entries of `λ`, so they run in the promoted type
+    # and `push!` converts each value to `R`.
+    V = _evaltype(T, eltype(x))
 
     i₀, bs = evaluate_all(radial, x[1], d[1])
     j₀, bθ = evaluate_all(angular, x[2], d[2])
@@ -548,14 +559,14 @@ function evaluate_all(B::PolarSplineBasis{T}, x, d::NTuple{2, Int} = (0, 0)) whe
     # rather than over all of N_θ, which is what keeps this O(p²) rather than O(N_θ).
     if i₀ ≤ 2
         for k in 1:3
-            v = zero(R)
+            v = zero(V)
             for ti in eachindex(bs)
                 i = basis_index(radial, i₀ + ti - 1)
                 (i == 1 || i == 2) || continue
-                aθ = zero(R)
+                aθ = zero(V)
                 for tj in eachindex(bθ)
                     j = basis_index(angular, j₀ + tj - 1)
-                    aθ += bθ[tj] * (i == 1 ? one(R) / 3 : B.λ[k, j])
+                    aθ += bθ[tj] * (i == 1 ? one(V) / 3 : B.λ[k, j])
                 end
                 v += bs[ti] * aθ
             end

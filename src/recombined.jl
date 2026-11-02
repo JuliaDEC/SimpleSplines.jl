@@ -290,7 +290,7 @@ function evaluate(b::RecombinedBSplineBasis{T}, j::Integer, x::Number,
     for t in nzrange(R, Int(j))
         v += vals[t] * evaluate(b.parent, rows[t], x, d)
     end
-    return v
+    return convert(_resulttype(T, typeof(x)), v)
 end
 
 # The Greville abscissa of a recombined function is taken to be that of the parent function it

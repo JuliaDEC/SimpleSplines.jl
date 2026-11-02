@@ -1,6 +1,19 @@
 
 @inline _evaltype(::Type{T}, ::Type{S}) where {T, S} = promote_type(T, S)
 
+# The type of the value of an evaluation at a point of type `P` with coefficients, or a basis, of
+# type `C`. It follows the point: a `Float32` point gives a `Float32` on a `Float64` basis, and
+# a `ForwardDiff.Dual` point a `Dual`; complex coefficients make it complex in that type. A point
+# that is not a floating-point type, an `Int` or a `Rational`, cannot hold the result, so the
+# promotion of `C` and `P` stands.
+@inline function _resulttype(::Type{C}, ::Type{P}) where {C, P}
+    if P <: Real && float(P) === P
+        C <: Complex ? Complex{P} : P
+    else
+        promote_type(C, P)
+    end
+end
+
 # Whether `x` sits at the value the topmost knot span is to be closed at. `nothing` is the
 # answer for a basis that has no such point -- a periodic one, whose knot vector extends
 # beyond the domain in both directions -- and it is a type, not a value, so the comparison
@@ -564,6 +577,13 @@ The `d`-th derivative of the `j`-th basis function of `b` at `x`, or of the spli
 
 `x` may also be a vector, in which case a vector is returned.
 
+The type of the result follows the point, as it does for [`evaluate!`](@ref): a `Float64` basis
+at a `Float32` point returns a `Float32`, and a `ForwardDiff.Dual` point returns a `Dual`.
+Complex coefficients make the result complex in that type. A point that is not a
+floating-point type, such as an `Int` or a `Rational`, cannot hold the result, so the
+promotion of the type of the basis and the type of the point stands: an `Int` point on a
+`Float64` basis returns a `Float64`.
+
 The explicit derivative order is what the lazy `b'` products cannot give: the discrete
 brackets need `d` up to `3`, and stacking `Derivative` that deep does not compose.
 
@@ -593,7 +613,8 @@ two are within a third of each other at ``p = 3`` and a factor of 150 apart at `
 function evaluate(b::BSplineBasis{T}, j::Integer, x::Number, d::Integer = 0) where {T}
     @boundscheck (1 ≤ j ≤ nbasis(b)) || throw(BoundsError(b, j))
     d ≥ 0 || throw(ArgumentError("the derivative order must be non-negative, got d = $(d)"))
-    _bspline(b.knots, Int(j), b.p, x, Int(d), _closeat(b))
+    convert(_resulttype(T, typeof(x)), _bspline(
+        b.knots, Int(j), b.p, x, Int(d), _closeat(b)))
 end
 
 function evaluate(b::PeriodicBSplineBasis{T}, j::Integer, x::Number,
@@ -616,7 +637,7 @@ function evaluate(b::PeriodicBSplineBasis{T}, j::Integer, x::Number,
     for shift in (-L, zero(L), L)
         v += _bspline(b.knots, k, b.p, x̃ + shift, Int(d), nothing)
     end
-    return v
+    return convert(_resulttype(T, typeof(x)), v)
 end
 
 function evaluate(b::AbstractBSplineBasis, j::Integer, X::AbstractVector, d::Integer = 0)
@@ -625,7 +646,7 @@ end
 
 function evaluate(b::AbstractBSplineBasis{T}, û::AbstractVector{S}, x::Number,
         d::Integer = 0) where {T, S}
-    R = _evaltype(promote_type(T, S), typeof(x))
+    R = _resulttype(promote_type(T, S), typeof(x))
     evaluate!(Vector{R}(undef, local_width(b)), b, û, x, d)
 end
 
@@ -698,7 +719,7 @@ function evaluate(b::AbstractBSplineBasis{T}, û::AbstractVector{S}, X::Abstract
         d::Integer = 0) where {T, S}
     length(û) == nbasis(b) || throw(DimensionMismatch(
         "the coefficient vector has $(length(û)) entries but the basis has $(nbasis(b))"))
-    R = _evaltype(promote_type(T, S), eltype(X))
+    R = _resulttype(promote_type(T, S), eltype(X))
 
     # One buffer for the whole sweep. Evaluating point by point through the scalar method
     # takes one per point, which for a plot or a diagnostic over a fine grid is the entire
@@ -925,14 +946,16 @@ end
     evaluate_all(b::AbstractBSplineBasis, x, d = 0)
 
 The allocating form of [`evaluate_all!`](@ref): returns `(j₀, values)` with a freshly allocated
-buffer of [`local_width`](@ref) entries.
+buffer of [`local_width`](@ref) entries. The element type of the buffer is the type of the
+point, `typeof(x)`, unless that is not a floating-point type: then it is the promotion of the
+type of the basis and the type of the point.
 
 Convenient at a call site that runs once. A particle loop should hold its own buffer and call
 [`evaluate_all!`](@ref), which allocates nothing, or [`evaluate!`](@ref) for the value of a
 spline at the point.
 """
 function evaluate_all(b::AbstractBSplineBasis{T}, x::Number, d::Integer = 0) where {T}
-    R = _evaltype(T, typeof(x))
+    R = _resulttype(T, typeof(x))
     # `local_width`, not `degree(b) + 1`: a recombined basis has a wider block at the two
     # ends, because a recombined function there spans the union of two parent supports.
     values = Vector{R}(undef, local_width(b))

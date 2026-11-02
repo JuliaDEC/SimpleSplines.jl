@@ -178,6 +178,12 @@ indexed by `I`, or of the spline with coefficient array `û`.
 indexable `D`-vector. `d` is a per-axis tuple of derivative orders; the gradient component
 ``\partial_k`` is `d = ntuple(i -> i == k ? 1 : 0, D)`.
 
+The type of the result follows the point, `eltype(x)`, as it does for [`evaluate!`](@ref): a
+`Float64` basis at a `Float32` point returns a `Float32`, and a `ForwardDiff.Dual` point returns
+a `Dual`. Complex coefficients make the result complex in that type. A point that is not a
+floating-point type, such as an `Int` or a `Rational`, cannot hold the result, so the
+promotion of the type of the basis and the type of the point stands.
+
 ```jldoctest
 julia> B = BSplineBasis(UniformMesh(8, 0 .. 1), 3) ⊗ BSplineBasis(UniformMesh(8, 0 .. 1), 2);
 
@@ -212,7 +218,7 @@ end
 
 function evaluate(B::TensorProductBasis{T, D}, û::AbstractArray{S, D}, x,
         d::NTuple{D, Int} = ntuple(_ -> 0, D)) where {T, D, S}
-    R = _evaltype(promote_type(T, S), eltype(x))
+    R = _resulttype(promote_type(T, S), eltype(x))
     bufs = ntuple(k -> Vector{R}(undef, local_width(B.bases[k])), D)
     evaluate!(bufs, B, û, x, d)
 end
@@ -312,7 +318,7 @@ end
 
 function evaluate_all(B::TensorProductBasis{T, D}, x,
         d::NTuple{D, Int} = ntuple(_ -> 0, D)) where {T, D}
-    R = _evaltype(T, eltype(x))
+    R = _resulttype(T, eltype(x))
     bufs = ntuple(k -> Vector{R}(undef, local_width(B.bases[k])), D)
     j₀ = evaluate_all!(bufs, B, x, d)
     return (j₀, bufs)

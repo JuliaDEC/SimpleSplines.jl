@@ -403,3 +403,49 @@ Random.seed!(0x2f7a91c4)
               0.5
     end
 end
+
+@testset "$(rpad("the allocating forms return the type of the point",80))" begin
+    radial = BSplineBasis(UniformMesh(10, 0 .. 1), 3)
+    angular = PeriodicBSplineBasis(UniformMesh(16, 0 .. 2π), 3)
+    B = PolarSplineBasis(radial, angular)
+    û = randn(nbasis(B))
+    atol(d) = 8 * eps(Float32) * 24^sum(d)
+
+    for x in ((0.0f0, 0.3f0), (0.01f0, 1.1f0), (0.5f0, 2.3f0)),
+        d in ((0, 0), (1, 0), (0, 1))
+
+        x64 = Float64.(x)
+        for k in (1, 3, 5, nbasis(B))
+            v = @inferred evaluate(B, k, x, d)
+            @test v isa Float32
+            @test isapprox(v, Float32(evaluate(B, k, x64, d)); rtol = 8 * eps(Float32),
+                atol = atol(d))
+        end
+        v = @inferred evaluate(B, û, x, d)
+        @test v isa Float32
+        @test isapprox(v, Float32(evaluate(B, û, x64, d)); rtol = 8 * eps(Float32),
+            atol = maximum(abs, û) * atol(d))
+        idx, vals = @inferred evaluate_all(B, x, d)
+        idx64, vals64 = evaluate_all(B, x64, d)
+        @test vals isa Vector{Float32}
+        @test idx == idx64
+        @test all(isapprox(vals[t], Float32(vals64[t]); rtol = 8 * eps(Float32),
+                      atol = atol(d)) for t in eachindex(vals))
+    end
+    @test (@inferred evaluate(B, û, [(0.5f0, 2.3f0), (0.2f0, 1.0f0)])) isa Vector{Float32}
+
+    # a Float64 point keeps Float64
+    @test (@inferred evaluate(B, 5, (0.5, 2.3))) isa Float64
+    @test (@inferred evaluate(B, û, (0.5, 2.3))) isa Float64
+    @test (@inferred evaluate_all(B, (0.5, 2.3)))[2] isa Vector{Float64}
+
+    # complex coefficients, in the type of the point
+    ûc = û .+ im .* randn(nbasis(B))
+    vc = @inferred evaluate(B, ûc, (0.5f0, 2.3f0))
+    @test vc isa ComplexF32
+    @test isapprox(vc, ComplexF32(evaluate(B, ûc, (0.5, 2.3))); rtol = 8 * eps(Float32),
+        atol = 8 * eps(Float32) * maximum(abs, ûc))
+
+    # a point that is not a floating-point type: the promotion of the basis and the point
+    @test (@inferred evaluate(B, û, (1 // 2, 1 // 3))) isa Float64
+end

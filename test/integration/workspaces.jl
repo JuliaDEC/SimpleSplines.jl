@@ -188,6 +188,105 @@ end
     end
 end
 
+@testset "$(rpad("the allocating forms return the type of the point",76))" begin
+    # The reference is the Float64 evaluation at the same point, rounded to Float32. The sum
+    # cancels, so the absolute floor is the size of its terms: the coefficients, times the size
+    # of a basis function after d derivatives on 8 cells.
+    for b in bases_1d(Float64)
+        û = randn(nbasis(b))
+        s = Spline(b, û)
+        j = nbasis(b) ÷ 2
+        X = Float32[0.2, 0.37, 0.9]
+        for x in Float32[0.37, 0.5, 0, 1, -0.25, 1.75], d in 0:2
+
+            tol = 8 * eps(Float32) * (8 * degree(b))^d
+            near(v, ref) = isapprox(v, ref; rtol = 8 * eps(Float32),
+                atol = tol * max(1, maximum(abs, û)))
+            v = @inferred evaluate(b, û, x, d)
+            @test v isa Float32
+            @test near(v, Float32(evaluate(b, û, Float64(x), d)))
+            @test near(v, evaluate!(zeros(Float32, local_width(b)), b, û, x, d))
+            w = @inferred evaluate(s, x, d)
+            @test w isa Float32
+            @test w == v
+            vj = @inferred evaluate(b, j, x, d)
+            @test vj isa Float32
+            @test near(vj, Float32(evaluate(b, j, Float64(x), d)))
+            j₀, vals = @inferred evaluate_all(b, x, d)
+            @test vals isa Vector{Float32}
+            @test all(near(vals[t], Float32(evaluate_all(b, Float64(x), d)[2][t]))
+            for t in eachindex(vals))
+        end
+        for d in 0:1
+            @test (@inferred evaluate(b, û, X, d)) isa Vector{Float32}
+            @test (@inferred evaluate(b, j, X, d)) isa Vector{Float32}
+            @test evaluate(b, û, X, d) == [evaluate(b, û, x, d) for x in X]
+        end
+
+        # a Float64 point keeps Float64, and so does a Float64 basis at a Float64 point
+        @test (@inferred evaluate(b, û, 0.37)) isa Float64
+        @test (@inferred evaluate(b, j, 0.37)) isa Float64
+        @test (@inferred evaluate(b, û, [0.2, 0.37])) isa Vector{Float64}
+        @test evaluate_all(b, 0.37)[2] isa Vector{Float64}
+
+        # Complex coefficients: the result is complex in the type of the point
+        ûc = û .+ im .* randn(nbasis(b))
+        vc = @inferred evaluate(b, ûc, 0.37f0)
+        @test vc isa ComplexF32
+        @test isapprox(vc, ComplexF32(evaluate(b, ûc, 0.37)); rtol = 8 * eps(Float32),
+            atol = 8 * eps(Float32) * maximum(abs, ûc))
+        @test (@inferred evaluate(b, ûc, 0.37)) isa ComplexF64
+        @test (@inferred evaluate(b, ûc, dual(0.37))) isa Complex{Dual12}
+
+        # A Dual point keeps its type
+        @test (@inferred evaluate(b, û, dual(0.37))) isa Dual12
+        @test (@inferred evaluate(b, j, dual(0.37))) isa Dual12
+        @test (@inferred evaluate_all(b, dual(0.37)))[2] isa Vector{Dual12}
+
+        # A point that is not a floating-point type cannot hold the result: the promotion of the
+        # basis and the point stands, so a Float64 basis returns Float64
+        @test (@inferred evaluate(b, û, 1)) isa Float64
+        @test (@inferred evaluate(b, û, 1 // 3)) isa Float64
+        @test (@inferred evaluate(b, j, 1)) isa Float64
+    end
+
+    # a Float32 basis keeps its type at an Int point, and a Float64 point stays Float64
+    b32 = bases_1d(Float32)[2]
+    û32 = randn(Float32, nbasis(b32))
+    @test (@inferred evaluate(b32, û32, 1)) isa Float32
+    @test (@inferred evaluate(b32, û32, 0.37)) isa Float64
+    @test (@inferred evaluate(b32, û32, 0.37f0)) isa Float32
+
+    for B in (basis_2d(Float64), basis_3d(Float64))
+        D = ndims(B)
+        û = randn(size(B)...)
+        x = D == 2 ? (0.37f0, 0.4f0) : (0.37f0, 1.2f0, -0.3f0)
+        x64 = Float64.(x)
+        for d in (ntuple(_ -> 0, D), ntuple(k -> k == 1 ? 1 : 0, D))
+            atol = 8 * eps(Float32) * maximum(abs, û) * 24^sum(d)
+            v = @inferred evaluate(B, û, x, d)
+            @test v isa Float32
+            @test isapprox(v, Float32(evaluate(B, û, x64, d)); rtol = 8 * eps(Float32), atol)
+            w = @inferred evaluate(Spline(B, û), x, d)
+            @test w isa Float32
+            @test w == v
+            I = ntuple(_ -> 2, D)
+            vi = @inferred evaluate(B, I, x, d)
+            @test vi isa Float32
+            @test isapprox(vi, Float32(evaluate(B, I, x64, d)); rtol = 8 * eps(Float32),
+                atol = 8 * eps(Float32) * 24^sum(d))
+            j₀, bufs = @inferred evaluate_all(B, x, d)
+            @test all(buf -> buf isa Vector{Float32}, bufs)
+        end
+        @test (@inferred evaluate(B, û, x64)) isa Float64
+        @test (@inferred evaluate_all(B, x64))[2][1] isa Vector{Float64}
+        ûc = û .+ im .* randn(size(B)...)
+        @test (@inferred evaluate(B, ûc, x)) isa ComplexF32
+        @test (@inferred evaluate(B, û, map(dual, x))) isa Dual12
+        @test (@inferred evaluate(B, û, map(Int ∘ round, x))) isa Float64
+    end
+end
+
 @testset "$(rpad("evaluate! on hostile arguments matches evaluate",76))" begin
     for T in (Float32, Float64), b in bases_1d(T)
 

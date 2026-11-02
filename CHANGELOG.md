@@ -23,7 +23,22 @@ does it on a `TensorProductBasis` with one buffer per axis. `mass_workspace(op, 
 `contract!(L, q, F, work, d)` and `l2_projection!(û, q, F, work)` contract and project on a
 `TensorProductQuadrature`. Each buffer and workspace belongs to one task. Tasks must not share a
 mass operator or `TensorProductQuadrature`, because a `CirculantMass` factor writes scratch space
-during each solve. The element type of the buffer follows the evaluation point, not the basis or the coefficients.
+during each solve. The type of the result follows the evaluation point, not the basis or the coefficients. This holds
+for the buffer forms and for the allocating forms alike: `evaluate`, `evaluate_all` and `Spline`
+evaluation on a one-dimensional basis, `TensorProductBasis`, `RecombinedBSplineBasis` and
+`PolarSplineBasis`, including the forms for one basis function and the forms for a vector of
+points. A `Float64` basis with `Float64` coefficients at a `Float32` point returns a `Float32` from
+`evaluate` and from `evaluate!`. `evaluate_all` returns buffers of `Float32`. Before this release
+the allocating forms returned a `Float64` there, because they took the promotion of the basis and
+the point. A `ForwardDiff.Dual` point returns a `ForwardDiff.Dual`. Complex coefficients make the
+result complex in the type of the point: a `ComplexF64` coefficient array at a `Float32` point
+returns a `ComplexF32`. A point that is not a floating-point type, such as an `Int` or a `Rational`,
+cannot hold the result. For such a point the promotion of the basis type and the point type stands:
+an `Int` or a `Rational` point on a `Float64` basis returns a `Float64`, and an `Int` point on a
+`Float32` basis returns a `Float32`. This keeps the result of every `Int` point as it was, and needs
+no new rule for them. A `Float64` point is unchanged: same type, same value, same bytes and speed.
+Measured, the `@allocated` bytes are identical before and after for the one-dimensional,
+tensor-product, recombined and polar forms, and the timings are equal within noise.
 `evaluate!` computes in the buffer's type and returns it. The buffer must hold `typeof(x)`
 (`eltype(x)` for the tensor-product form), or an `ArgumentError` is raised. So a `Float64` basis
 with `Float64` coefficients at a `Float32` point works in a `Float32` buffer. It returns a
