@@ -487,7 +487,8 @@ Base.eltype(::KroneckerMassWorkspace{T}) where {T} = T
     mass_solve!(y, op::KroneckerMass, x, work)
 
 A workspace of element type `T` for [`mass_solve!`](@ref) on `op`, and the solve that uses it,
-which allocates nothing.
+which allocates nothing unless an axis of `op` is a [`FactorizedMass`](@ref). The solve of that
+axis, a periodic basis on a non-uniform mesh, allocates a CHOLMOD temporary.
 
 The workspace holds two buffers of `size(mass_factors(op)[k], 1)` entries for each axis `k`.
 The solve takes `y` and `x` as arrays of the size of the tensor-product basis, or as vectors of
@@ -792,7 +793,8 @@ end
     l2_projection!(û, q::TensorProductQuadrature, F::AbstractArray, work)
 
 The forms of [`contract`](@ref) and [`l2_projection!`](@ref) that take a workspace from
-[`contract_workspace`](@ref), and allocate nothing.
+[`contract_workspace`](@ref), and allocate nothing. The exception is a periodic axis on a
+non-uniform mesh: the solve of its [`FactorizedMass`](@ref) allocates a CHOLMOD temporary.
 
 `contract!` writes [`contract`](@ref)`(q, F, d)` into `L`, of size `size(basis(q))`;
 `l2_projection!` writes `l2_projection(q, F)` into `û`. `F` is the sample on the quadrature
@@ -910,7 +912,8 @@ The coefficient array of the ``L^2`` projection of `f` onto the tensor-product s
 `f` may be a function of a `D`-tuple of coordinates, or an array already sampled on the
 quadrature grid — see [`quadrature_sample`](@ref). The result has size `size(basis(q))`. The
 form with a workspace from [`contract_workspace`](@ref) takes the sample and allocates
-nothing.
+nothing, except on a periodic axis with a non-uniform mesh, where the solve of its
+[`FactorizedMass`](@ref) allocates a CHOLMOD temporary.
 
 ```jldoctest
 julia> B = BSplineBasis(UniformMesh(16, 0 .. 1), 3) ⊗ BSplineBasis(UniformMesh(16, 0 .. 1), 3);

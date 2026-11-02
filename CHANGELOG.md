@@ -10,15 +10,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### New Features
 
 The hot evaluation, solve and projection paths take buffers that the caller holds, and then
-allocate nothing. `evaluate!(buf, b, û, x, d)` and `evaluate!(buf, s, x, d)` evaluate a spline
-on a one-dimensional basis with a buffer of `local_width(b)` entries; `evaluate!(bufs, B, û, x,
-d)` does it on a `TensorProductBasis` with one buffer per axis. `mass_workspace(op, T)` and
+allocate nothing, except for the solve on a periodic axis with a non-uniform mesh
+(`GradedMesh` or `RandomMesh`). The `FactorizedMass` of that axis allocates a CHOLMOD
+temporary, because CHOLMOD has no in-place `ldiv!`. Measured in a cold process with `Float64`,
+periodic × clamped, cubic, on 8 × 8 cells: 0 bytes on a `UniformMesh`, and 9328 bytes per
+`mass_solve!(y, op, x, work)` and per `l2_projection!(û, q, F, work)` on a `GradedMesh` or a
+`RandomMesh`.
+`evaluate!(buf, b, û, x, d)` and `evaluate!(buf, s, x, d)` evaluate a spline on a
+one-dimensional basis with a buffer of `local_width(b)` entries; `evaluate!(bufs, B, û, x, d)`
+does it on a `TensorProductBasis` with one buffer per axis. `mass_workspace(op, T)` and
 `mass_solve!(y, op, x, work)` solve with a `KroneckerMass`; `contract_workspace(q, T)`,
 `contract!(L, q, F, work, d)` and `l2_projection!(û, q, F, work)` contract and project on a
-`TensorProductQuadrature`. Each buffer and workspace belongs to one task. A buffer whose element
-type cannot hold the promoted type of the basis, the coefficients and `x` raises an
-`ArgumentError`, and is not rounded to. The allocating forms stay, and build their buffers and
-call these.
+`TensorProductQuadrature`. Each buffer and workspace belongs to one task. Tasks must not share a
+mass operator or `TensorProductQuadrature`, because a `CirculantMass` factor writes scratch space
+during each solve. A buffer whose element type cannot hold the promoted type of the basis, the
+coefficients and `x` raises an `ArgumentError`, and is not rounded to. The allocating forms stay,
+and build their buffers and call these.
 
 Bytes per call, measured with `@allocated` after a warm call through a function barrier, in a
 cold process on Julia 1.13.3, on `cb82e6f` and on this release. The one-dimensional basis is
