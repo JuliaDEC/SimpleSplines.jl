@@ -85,3 +85,36 @@
   are right; only the derivatives are lost.
 - **kind:** defect
 - **found:** 2026-11-02
+
+### K7 · `l2_projection!` into a `Float32` array fails on a `Float64` periodic quadrature
+
+- **location:** `src/tensorproduct.jl`, `l2_projection!`, and the FFT solve of `CirculantMass`
+- **evidence:** with `B = BSplineBasis(UniformMesh(8, 0.0 .. 1.0), 3, Periodic()) ⊗
+  BSplineBasis(UniformMesh(8, -1.0 .. 2.0), 3)` and `q = TensorProductQuadrature(B)`,
+  `l2_projection!(zeros(Float32, size(B)...), q, ones(quadrature_grid_size(q)...))` raises
+  `MethodError: no method matching mul!(::Vector{ComplexF64}, ::FFTW.rFFTWPlan{Float64, -1,
+  false, 1, Tuple{Int64}}, ::Vector{Float32}, ::Bool, …`, on `cb82e6f` and on the branch that
+  adds caller-held workspaces alike: the `Float64` plan of the periodic factor does not take a
+  `Float32` vector.
+- **kind:** defect
+- **found:** 2026-11-02; older than `cb82e6f`
+
+### K8 · `mass_solve!` on a `KroneckerMass` does not check the length of `x`
+
+- **location:** `src/tensorproduct.jl`, `mass_solve!(y, op::KroneckerMass, x)`
+- **evidence:** the solve copies `x` into `y` with `copyto!`, which accepts a shorter `x`, and
+  then solves on the whole of `y`. On the basis of K7, with `y = zeros(size(B)...)` (88 entries)
+  and `x = ones(83)`, `mass_solve!(y, mass_operator(q), x)` returns with no error, on `cb82e6f`
+  and on the branch that adds caller-held workspaces alike; the last five entries of `x` are
+  taken from the zeros of `y`.
+- **kind:** defect
+- **found:** 2026-11-02; older than `cb82e6f`
+
+### K9 · `evaluate!` on a `TensorProductBasis` takes buffers of one type only
+
+- **location:** `src/tensorproduct.jl`, `evaluate!(bufs, B::TensorProductBasis, û, x, d)`
+- **evidence:** the method takes `bufs` as an `NTuple{D, <:AbstractVector{R}}`, so a tuple
+  of a `Vector` and a `SubArray`, or of vectors of different element types, raises a
+  `MethodError`. `evaluate_all!(bufs, B, x, d)` on `cb82e6f` has the same signature.
+- **kind:** found late
+- **found:** 2026-11-02

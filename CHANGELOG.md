@@ -28,17 +28,20 @@ cells. Each pair is `Float64` / `Float32`.
 | `evaluate(b, û, x, d)` | 96 / 80 | 96 / 80 | 0 / 0 |
 | `evaluate(B, û, x, d)` | 192 / 160 | 192 / 160 | 0 / 0 |
 | `mass_solve!(y, op, x)` | 1232 / 1104 | 544 / 416 | 0 / 0 |
-| `contract(q, F, d)` | 24064 / 13536 | 30128 / 15328 | 0 / 0 |
+| `contract(q, F, d)` | 24064 / 13536 | 29584 / 14912 | 0 / 0 |
 | `l2_projection!(û, q, F)` | 25296 / 14640 | 29344 / 14880 | 0 / 0 |
 
-The solve along the axes of a `KroneckerMass` and the weighting and contraction along the axes
-of `contract` are unrolled over the tuple of axes, so an operator or a quadrature whose axes have
-different types no longer dispatches dynamically: that is the drop of the three-argument
-`mass_solve!` on the periodic × clamped basis. The allocating `contract` and `l2_projection!`
-allocate more than before, because they build the whole workspace: two buffers of the largest
-intermediate array, and the buffers of the mass solve. `mass_solve!` on a `KroneckerMass` checks
-the length of `y` before it copies `x`, and raises a `DimensionMismatch` for a `y` of the wrong
-length. The results of the allocating forms are bit-for-bit those of `cb82e6f`.
+The solve along the axes of a `KroneckerMass` and the contraction along the axes of `contract`
+are unrolled over the tuple of axes, so an operator or a quadrature whose axes have different
+types no longer dispatches dynamically: that is the drop of the three-argument `mass_solve!` on
+the periodic × clamped basis. The allocating `contract` and `l2_projection!`
+allocate more than before, because each builds two buffers of the largest intermediate array,
+and `l2_projection!` also the buffers of the mass solve. `mass_solve!` on a `KroneckerMass`
+checks the length of `y` before it copies `x`, and raises a `DimensionMismatch` for a `y` of the
+wrong length. Where the element types of the arguments are equal, the results of the allocating
+forms are bit-for-bit those of `cb82e6f`. The three-argument `l2_projection!` now contracts in
+`eltype(û)`, not in the promoted type of the quadrature and the sample, so where these types
+differ its result can differ from that of `cb82e6f` by the round-off of the narrower type.
 
 `ForwardDiff` joins the test dependencies: the tests evaluate with `ForwardDiff.Dual` arguments
 and buffers, which also allocate nothing.

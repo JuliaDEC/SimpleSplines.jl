@@ -245,6 +245,7 @@ end
         @test_throws ArgumentError mass_solve!(y, op, x, badsize)
         @test startswith(message(() -> mass_solve!(y, op, x, badsize)),
             "ArgumentError: the workspace has buffers of lengths " *
+            "$(map(n -> size(n, 1), mass_factors(other))) and " *
             "$(map(n -> size(n, 1), mass_factors(other))) but the operator needs " *
             "$(map(n -> size(n, 1), mass_factors(op)))")
         # a workspace of another dimension
@@ -252,12 +253,24 @@ end
         b19 = BSplineBasis(UniformMesh(16, T(0) .. T(1)), 3)
         flat = mass_workspace(mass_operator(TensorProductQuadrature(b19 ⊗ b19 ⊗ b19 ⊗ b19)), T)
         @test_throws ArgumentError mass_solve!(y, op, x, flat)
-        # a long `dst` buffer
-        longdst = SimpleSplines.KroneckerMassWorkspace(work.src,
-            map(v -> [v; zero(T)], work.dst))
+        # a long `src` buffer, a long `dst` buffer, and both too long by different amounts,
+        # which the message names each at its own place
+        dims = map(n -> size(n, 1), mass_factors(op))
+        grow(vs, m) = map(v -> [v; zeros(T, m)], vs)
+        longsrc = SimpleSplines.KroneckerMassWorkspace(grow(work.src, 1), work.dst)
+        @test_throws ArgumentError mass_solve!(y, op, x, longsrc)
+        @test startswith(message(() -> mass_solve!(y, op, x, longsrc)),
+            "ArgumentError: the workspace has buffers of lengths $(dims .+ 1) and $(dims) " *
+            "but the operator needs $(dims)")
+        longdst = SimpleSplines.KroneckerMassWorkspace(work.src, grow(work.dst, 1))
         @test_throws ArgumentError mass_solve!(y, op, x, longdst)
         @test startswith(message(() -> mass_solve!(y, op, x, longdst)),
-            "ArgumentError: the workspace has buffers of lengths")
+            "ArgumentError: the workspace has buffers of lengths $(dims) and $(dims .+ 1) " *
+            "but the operator needs $(dims)")
+        longboth = SimpleSplines.KroneckerMassWorkspace(grow(work.src, 2), grow(work.dst, 1))
+        @test startswith(message(() -> mass_solve!(y, op, x, longboth)),
+            "ArgumentError: the workspace has buffers of lengths $(dims .+ 2) and " *
+            "$(dims .+ 1) but the operator needs $(dims)")
         # an array of the wrong length
         long = zeros(T, length(x) + 1)
         @test_throws DimensionMismatch mass_solve!(long, op, vec(x), work)
@@ -318,6 +331,14 @@ end
         @test startswith(message(() -> l2_projection!(Lbad, q, F, work)),
             "DimensionMismatch: the coefficient array is $(size(Lbad)) but the basis is " *
             "$(size(B))")
+        # the three-argument form checks `û` before it samples `f`
+        calls = Ref(0)
+        counted = x -> (calls[] += 1; one(T))
+        @test_throws DimensionMismatch l2_projection!(Lbad, q, counted)
+        @test calls[] == 0
+        @test startswith(message(() -> l2_projection!(Lbad, q, counted)),
+            "DimensionMismatch: the coefficient array is $(size(Lbad)) but the basis is " *
+            "$(size(B))")
 
         # a workspace of the wrong element type names both types
         S = T === Float64 ? Float32 : Float64
@@ -331,13 +352,28 @@ end
         badsize = contract_workspace(TensorProductQuadrature(larger(B)), T)
         @test_throws ArgumentError contract!(L, q, F, badsize)
         @test startswith(message(() -> contract!(L, q, F, badsize)),
-            "ArgumentError: the workspace holds buffers of $(length(badsize.a)) entries but " *
-            "this quadrature needs $(length(work.a))")
+            "ArgumentError: the workspace holds buffers of $(length(badsize.a)) and " *
+            "$(length(badsize.b)) entries but this quadrature needs $(length(work.a))")
         @test length(badsize.a) != length(work.a)
         @test_throws ArgumentError l2_projection!(û, q, F, badsize)
-        # a long second buffer
+        # a long first buffer, a long second buffer, and both too long by different
+        # amounts, which the message names each at its own place
+        n = length(work.a)
+        longa = SimpleSplines.ContractWorkspace([work.a; zero(T)], work.b, work.mass)
+        @test_throws ArgumentError contract!(L, q, F, longa)
+        @test startswith(message(() -> contract!(L, q, F, longa)),
+            "ArgumentError: the workspace holds buffers of $(n + 1) and $(n) entries but " *
+            "this quadrature needs $(n)")
         longb = SimpleSplines.ContractWorkspace(work.a, [work.b; zero(T)], work.mass)
         @test_throws ArgumentError contract!(L, q, F, longb)
+        @test startswith(message(() -> contract!(L, q, F, longb)),
+            "ArgumentError: the workspace holds buffers of $(n) and $(n + 1) entries but " *
+            "this quadrature needs $(n)")
+        longab = SimpleSplines.ContractWorkspace([work.a; zeros(T, 2)], [work.b; zero(T)],
+            work.mass)
+        @test startswith(message(() -> contract!(L, q, F, longab)),
+            "ArgumentError: the workspace holds buffers of $(n + 2) and $(n + 1) entries " *
+            "but this quadrature needs $(n)")
         # a mass workspace of a larger operator
         wrongmass = SimpleSplines.ContractWorkspace(work.a, work.b, badsize.mass)
         @test_throws ArgumentError l2_projection!(û, q, F, wrongmass)

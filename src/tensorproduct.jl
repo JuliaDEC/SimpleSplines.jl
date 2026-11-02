@@ -516,8 +516,8 @@ function mass_solve!(y::AbstractArray, op::KroneckerMass{T, D}, x::AbstractArray
         "$(eltype(y))"))
     (map(length, work.src) == op.dims && map(length, work.dst) == op.dims) ||
         throw(ArgumentError(
-            "the workspace has buffers of lengths $(map(length, work.src)) but the operator " *
-            "needs $(op.dims)"))
+            "the workspace has buffers of lengths $(map(length, work.src)) and " *
+            "$(map(length, work.dst)) but the operator needs $(op.dims)"))
     length(y) == prod(op.dims) || throw(DimensionMismatch(
         "the array has $(length(y)) entries but the operator acts on $(op.dims)"))
     y === x || copyto!(y, x)
@@ -740,10 +740,13 @@ function contract(q::TensorProductQuadrature{T, D}, F::AbstractArray{S, D},
         d::NTuple{D, Int} = ntuple(_ -> 0, D)) where {T, D, S}
     R = promote_type(T, S)
     L = Array{R}(undef, size(q.basis))
-    contract!(L, q, F, contract_workspace(q, R), d)
+    n = _contract_length(q)
+    # No mass workspace: `contract!` does not read it.
+    contract!(
+        L, q, F, ContractWorkspace(Vector{R}(undef, n), Vector{R}(undef, n), nothing), d)
 end
 
-struct ContractWorkspace{T, MW <: KroneckerMassWorkspace{T}}
+struct ContractWorkspace{T, MW <: Union{KroneckerMassWorkspace{T}, Nothing}}
     a::Vector{T}
     b::Vector{T}
     mass::MW
@@ -789,8 +792,8 @@ grid and is not changed. The workspace holds two buffers for the intermediate ar
 contraction and a [`mass_workspace`](@ref) of `mass_operator(q)` for the solve. Wrong sizes
 of `L`, `û` or `F` raise the `DimensionMismatch` of the allocating forms; a workspace whose
 element type is not `eltype(L)`, or `eltype(û)`, or whose sizes do not fit `q`, raises an
-`ArgumentError`. `contract` builds a workspace on each call, and so does the three-argument
-`l2_projection!`.
+`ArgumentError`. `contract` builds the two buffers on each call, and the three-argument
+`l2_projection!` a whole workspace.
 
 A workspace belongs to one task. It does not make the quadrature safe for two tasks: a
 [`CirculantMass`](@ref) factor of its mass operator holds a scratch vector of its own.
@@ -818,31 +821,28 @@ function contract!(L::AbstractArray, q::TensorProductQuadrature{T, D},
         "type $(eltype(L))"))
     n = _contract_length(q)
     (length(work.a) == n && length(work.b) == n) || throw(ArgumentError(
-        "the workspace holds buffers of $(length(work.a)) entries but this quadrature " *
-        "needs $(n)"))
+        "the workspace holds buffers of $(length(work.a)) and $(length(work.b)) entries but " *
+        "this quadrature needs $(n)"))
 
     # A copy, always: the weighting below is in place, and `F` is the caller's sample.
     copyto!(work.a, firstindex(work.a), F, firstindex(F), length(F))
 
     # The weights of every axis, applied once, before any contraction. Doing it here rather
     # than inside the loop keeps the weighting a single elementwise pass and makes the
-    # per-axis step a plain matrix product.
-    _scale_axes!(work.a, size(F), q.quadratures, 1)
+    # per-axis step a plain matrix product. The weights of all axes are `Vector{T}`, so the
+    # loop indexes a tuple of one type.
+    w = quadrature_weights(q)
+    for k in 1:D
+        _scale_along!(work.a, size(F), w[k], k)
+    end
 
     C = _contract_axes!(work.a, work.b, length(F), q.quadratures, d)
     copyto!(L, firstindex(L), C, firstindex(C), length(L))
     return L
 end
 
-# The weighting and the contraction, one axis per call. Recursion on the tuple rather than a
-# loop over `1:D`, for the reason of `_solve_axes!`: the axes need not have the same
-# quadrature type.
-_scale_axes!(A, dims, ::Tuple{}, k) = A
-function _scale_axes!(A, dims, qs::Tuple, k)
-    _scale_along!(A, dims, quadrature_weights(first(qs)), k)
-    _scale_axes!(A, dims, Base.tail(qs), k + 1)
-end
-
+# The contraction, one axis per call. Recursion on the tuple rather than a loop over `1:D`,
+# for the reason of `_solve_axes!`: the axes need not have the same quadrature type.
 # `src` holds an array of `n` entries whose first axis is the quadrature axis of `first(qs)`.
 # Each step writes `Φ * M` into `dst` transposed, as a (rest, N_k) array, which cycles the
 # contracted axis to the back; after the last step the axes are back in order, and the
@@ -930,15 +930,22 @@ function l2_projection(q::TensorProductQuadrature{T, D}, f) where {T, D}
 end
 
 function l2_projection!(û::AbstractArray, q::TensorProductQuadrature{T, D}, f) where {T, D}
+    # The size of `û` is checked before `f` is sampled on the whole grid.
+    _check_coefficients(û, q)
     F = f isa AbstractArray ? f : quadrature_sample(q, f)
     l2_projection!(û, q, F, contract_workspace(q, eltype(û)))
 end
 
 function l2_projection!(û::AbstractArray, q::TensorProductQuadrature{T, D},
         F::AbstractArray, work::ContractWorkspace) where {T, D}
-    size(û) == size(q.basis) || throw(DimensionMismatch(
-        "the coefficient array is $(size(û)) but the basis is $(size(q.basis))"))
+    _check_coefficients(û, q)
     contract!(û, q, F, work)
     mass_solve!(û, mass_operator(q), û, work.mass)
     return û
+end
+
+function _check_coefficients(û::AbstractArray, q::TensorProductQuadrature)
+    size(û) == size(q.basis) || throw(DimensionMismatch(
+        "the coefficient array is $(size(û)) but the basis is $(size(q.basis))"))
+    return nothing
 end
