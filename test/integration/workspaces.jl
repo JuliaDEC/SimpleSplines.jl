@@ -122,7 +122,7 @@ end
                 "basis, got $(n)")
             @test_throws DimensionMismatch evaluate!(zeros(n), Spline(b, û), 0.37)
         end
-        # the coefficient check of `evaluate`, unchanged
+        # the coefficient check of `evaluate`
         @test_throws DimensionMismatch evaluate!(zeros(w), b, zeros(nbasis(b) + 1), 0.37)
         @test startswith(message(() -> evaluate!(zeros(w), b, zeros(nbasis(b) + 1), 0.37)),
             "DimensionMismatch: the coefficient vector has $(nbasis(b) + 1) entries")

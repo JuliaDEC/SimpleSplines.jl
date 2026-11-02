@@ -218,7 +218,7 @@ function evaluate(B::TensorProductBasis{T, D}, û::AbstractArray{S, D}, x,
 end
 
 @doc raw"""
-    evaluate!(bufs::NTuple{D,AbstractVector}, B::TensorProductBasis, û::AbstractArray, x,
+    evaluate!(bufs::NTuple{D,<:AbstractVector}, B::TensorProductBasis, û::AbstractArray, x,
               d = ntuple(_ -> 0, D))
 
 The value of [`evaluate`](@ref)`(B, û, x, d)`, computed in the caller's per-axis buffers,
