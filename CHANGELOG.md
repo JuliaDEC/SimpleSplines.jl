@@ -9,21 +9,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking Changes
 
-**An evaluation at a narrower IEEE float point returns the precision of the point.** Where the
-basis and the coefficients are IEEE floats (`Float16`, `Float32`, `Float64`) or complex numbers of
-them, and the point is an IEEE float, the result takes the precision of the point. A `Float64`
+**An evaluation at an IEEE float point returns the precision of the point.** Where the basis and
+the coefficients are IEEE floats (`Float16`, `Float32`, `Float64`) or complex numbers of them, and
+the point is an IEEE float, the result takes the precision of the point. This changes the result
+wherever the point is narrower than the promotion of the basis and the coefficients. A `Float64`
 basis with `Float64` coefficients at a `Float32` point returns a `Float32`, where 0.3.5 returned a
-`Float64`; complex `Float64` coefficients there return a `ComplexF32`, where 0.3.5 returned a
-`ComplexF64`; and `evaluate_all` returns buffers of `Float32`. This holds for `evaluate`,
+`Float64`; so does a `Float32` basis with `Float64` coefficients at a `Float32` point; complex
+`Float64` coefficients there return a `ComplexF32`, where 0.3.5 returned a `ComplexF64`; and
+`evaluate_all` returns buffers of `Float32`. This holds for `evaluate`,
 `evaluate_all` and `Spline` evaluation on a one-dimensional basis, `TensorProductBasis`,
 `RecombinedBSplineBasis` and `PolarSplineBasis`, including the forms for one basis function and
 the forms for a vector of points. A caller that needs the 0.3.5 result passes the point in the
-precision of the basis: `Float64(x)`, or `Float64.(x)` for a tuple or a vector of coordinates.
+precision of `promote_type(eltype(basis), eltype(û))`: for `Float64` coefficients, `Float64(x)`, or
+`Float64.(x)` for a tuple or a vector of coordinates.
 Every other type is kept by promotion of the types of the basis, the coefficients and the point,
 as in 0.3.5: a `ForwardDiff.Dual` point or `Dual` coefficients return a `Dual`, so
 `ForwardDiff.gradient` with respect to the coefficients works; a `BigFloat` basis or `BigFloat`
 coefficients return a `BigFloat`; and an `Int` or a `Rational` point on a `Float64` basis returns
-a `Float64`. A point of the precision of the basis, or a wider one, returns the type of 0.3.5.
+a `Float64`. A point of the precision of that promotion, or a wider one, returns the type of
+0.3.5.
 
 **`mass_solve!(y, op, x)` on a `KroneckerMass`, and so `ldiv!(y, op, x)`, raise a
 `DimensionMismatch` for an `x` whose length is not that of `y`.** In 0.3.4 and 0.3.5 an `x`
