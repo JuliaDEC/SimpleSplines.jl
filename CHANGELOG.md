@@ -15,8 +15,10 @@ on a one-dimensional basis with a buffer of `local_width(b)` entries; `evaluate!
 d)` does it on a `TensorProductBasis` with one buffer per axis. `mass_workspace(op, T)` and
 `mass_solve!(y, op, x, work)` solve with a `KroneckerMass`; `contract_workspace(q, T)`,
 `contract!(L, q, F, work, d)` and `l2_projection!(û, q, F, work)` contract and project on a
-`TensorProductQuadrature`. Each buffer and workspace belongs to one task. The allocating forms
-stay, and build their buffers and call these.
+`TensorProductQuadrature`. Each buffer and workspace belongs to one task. A buffer whose element
+type cannot hold the promoted type of the basis, the coefficients and `x` raises an
+`ArgumentError`, and is not rounded to. The allocating forms stay, and build their buffers and
+call these.
 
 Bytes per call, measured with `@allocated` after a warm call through a function barrier, in a
 cold process on Julia 1.13.3, on `cb82e6f` and on this release. The one-dimensional basis is
@@ -34,17 +36,26 @@ cells. Each pair is `Float64` / `Float32`.
 The solve along the axes of a `KroneckerMass` and the contraction along the axes of `contract`
 are unrolled over the tuple of axes, so an operator or a quadrature whose axes have different
 types no longer dispatches dynamically: that is the drop of the three-argument `mass_solve!` on
-the periodic × clamped basis. The allocating `contract` and `l2_projection!` allocate more
-than before, because each builds two buffers of the largest intermediate array, and
-`l2_projection!` also the buffers of the mass solve. `mass_solve!` on a `KroneckerMass` checks
-the length of `y` before it copies `x`, and raises a `DimensionMismatch` for a `y` of the wrong
-length. Where the element types of the arguments are equal, the results of the allocating
-forms are bit-for-bit those of `cb82e6f`. The three-argument `l2_projection!` now contracts in
-`eltype(û)`, not in the promoted type of the quadrature and the sample, so where these types
-differ its result can differ from that of `cb82e6f` by the round-off of the narrower type.
+the periodic × clamped basis. The allocating `contract` and `l2_projection!` allocate more than
+before, because each builds two buffers of the largest intermediate array, and `l2_projection!`
+also the buffers of the mass solve. `mass_solve!` on a `KroneckerMass` checks the lengths of `y`
+and `x` before it copies `x`, and raises a `DimensionMismatch` for a `y` or an `x` whose length
+is not that of the operator. Where the element types of the arguments are equal, the results of
+the allocating forms are bit-for-bit those of `cb82e6f`. The three-argument `l2_projection!` now
+contracts in `eltype(û)`, not in the promoted type of the quadrature and the sample, so where
+these types differ its result can differ from that of `cb82e6f` by the round-off of the narrower
+type.
 
 `ForwardDiff` joins the test dependencies: the tests evaluate with `ForwardDiff.Dual` arguments
 and buffers, which also allocate nothing.
+
+### Bug Fixes
+
+`mass_solve!` on a `KroneckerMass`, in the three-argument form and so in `ldiv!` and `\`, accepted
+an `x` shorter than `y` in 0.3.4, with no error. It copied `x` into the start of `y` and solved the
+whole of `y`, so the solve ran on whatever the rest of `y` held. It now raises a
+`DimensionMismatch` for an `x` whose length is not that of `y`. This fixes known issue K8. Earlier
+releases were not checked.
 
 ## [0.3.4] — 2026-10-31
 

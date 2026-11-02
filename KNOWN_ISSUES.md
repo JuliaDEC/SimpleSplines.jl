@@ -99,24 +99,12 @@
 - **kind:** defect
 - **found:** 2026-11-02; older than `cb82e6f`
 
-### K8 · `mass_solve!` on a `KroneckerMass` does not check the length of `x`
-
-- **location:** `src/tensorproduct.jl`, `mass_solve!(y, op::KroneckerMass, x, work)`, which
-  the three-argument form calls
-- **evidence:** the solve copies `x` into `y` with `copyto!`, which accepts a shorter `x`, and
-  then solves on the whole of `y`. On the basis of K7, with `y = zeros(size(B)...)` (88 entries)
-  and `x = ones(83)`, `mass_solve!(y, mass_operator(q), x)` returns with no error, on `cb82e6f`
-  and on the branch that adds caller-held workspaces alike; the last five entries of `x` are
-  taken from the zeros of `y`.
-- **kind:** defect
-- **found:** 2026-11-02; older than `cb82e6f`
-
 ### K9 · `evaluate!` on a `TensorProductBasis` takes buffers of one type only
 
 - **location:** `src/tensorproduct.jl`, `evaluate!(bufs, B::TensorProductBasis, û, x, d)`
-- **evidence:** the method takes `bufs` as an `NTuple{D, <:AbstractVector{R}}`, so a tuple
+- **evidence:** the method takes `bufs` as an `NTuple{D, <:AbstractVector}`, so a tuple
   of a `Vector` and a `SubArray`, or of vectors of different element types, raises a
-  `MethodError`. `evaluate_all!(bufs, B, x, d)`, as on `cb82e6f`, takes `bufs` as an
-  `NTuple{D, <:AbstractVector}` and refuses the same tuples.
+  `MethodError`. `evaluate_all!(bufs, B, x, d)`, which it calls, takes `bufs` as the same
+  type, as on `cb82e6f`, and refuses the same tuples.
 - **kind:** found late
 - **found:** 2026-11-02

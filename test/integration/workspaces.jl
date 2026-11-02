@@ -126,6 +126,13 @@ end
         @test_throws DimensionMismatch evaluate!(zeros(w), b, zeros(nbasis(b) + 1), 0.37)
         @test startswith(message(() -> evaluate!(zeros(w), b, zeros(nbasis(b) + 1), 0.37)),
             "DimensionMismatch: the coefficient vector has $(nbasis(b) + 1) entries")
+        # a buffer that cannot hold the value, of a narrower type or for a Dual argument
+        @test_throws ArgumentError evaluate!(zeros(Float32, w), b, û, 0.37)
+        @test startswith(message(() -> evaluate!(zeros(Float32, w), b, û, 0.37)),
+            "ArgumentError: evaluate! needs a buffer that holds Float64, got a buffer of " *
+            "Float32")
+        @test_throws ArgumentError evaluate!(zeros(Float32, w), Spline(b, û), 0.37)
+        @test_throws ArgumentError evaluate!(zeros(w), b, û, dual(0.37))
     end
 end
 
@@ -207,6 +214,15 @@ end
         @test startswith(message(() -> evaluate!(bufs, B, ûbad, first(points))),
             "DimensionMismatch: the coefficient array is $(size(ûbad)) but the basis is " *
             "$(size(B))")
+        # buffers that cannot hold the value, for Dual arguments or of a narrower type
+        @test_throws ArgumentError evaluate!(bufs, B, û, map(dual, first(points)))
+        if T === Float64
+            narrow = map(w -> zeros(Float32, w), local_width(B))
+            @test_throws ArgumentError evaluate!(narrow, B, û, first(points))
+            @test startswith(message(() -> evaluate!(narrow, B, û, first(points))),
+                "ArgumentError: evaluate! needs buffers that hold Float64, got buffers of " *
+                "Float32")
+        end
     end
 end
 
@@ -257,17 +273,17 @@ end
         # which the message names each at its own place
         dims = map(n -> size(n, 1), mass_factors(op))
         grow(vs, m) = map(v -> [v; zeros(T, m)], vs)
-        longsrc = SimpleSplines.KroneckerMassWorkspace(grow(work.src, 1), work.dst)
+        longsrc = typeof(work)(grow(work.src, 1), work.dst)
         @test_throws ArgumentError mass_solve!(y, op, x, longsrc)
         @test startswith(message(() -> mass_solve!(y, op, x, longsrc)),
             "ArgumentError: the workspace has buffers of lengths $(dims .+ 1) and $(dims) " *
             "but the operator needs $(dims)")
-        longdst = SimpleSplines.KroneckerMassWorkspace(work.src, grow(work.dst, 1))
+        longdst = typeof(work)(work.src, grow(work.dst, 1))
         @test_throws ArgumentError mass_solve!(y, op, x, longdst)
         @test startswith(message(() -> mass_solve!(y, op, x, longdst)),
             "ArgumentError: the workspace has buffers of lengths $(dims) and $(dims .+ 1) " *
             "but the operator needs $(dims)")
-        longboth = SimpleSplines.KroneckerMassWorkspace(grow(work.src, 2), grow(work.dst, 1))
+        longboth = typeof(work)(grow(work.src, 2), grow(work.dst, 1))
         @test startswith(message(() -> mass_solve!(y, op, x, longboth)),
             "ArgumentError: the workspace has buffers of lengths $(dims .+ 2) and " *
             "$(dims .+ 1) but the operator needs $(dims)")
@@ -277,6 +293,15 @@ end
         @test startswith(message(() -> mass_solve!(long, op, vec(x), work)),
             "DimensionMismatch: the array has $(length(x) + 1) entries but the operator " *
             "acts on $(size(x))")
+        # an argument shorter or longer than `y`, through both forms
+        for n in (length(x) - 5, length(x) + 1)
+            xbad = ones(T, n)
+            @test_throws DimensionMismatch mass_solve!(y, op, xbad, work)
+            @test_throws DimensionMismatch mass_solve!(y, op, xbad)
+            @test startswith(message(() -> mass_solve!(y, op, xbad, work)),
+                "DimensionMismatch: the argument has $(n) entries but the operator acts on " *
+                "$(size(x))")
+        end
     end
 end
 
@@ -379,5 +404,10 @@ end
         @test_throws ArgumentError l2_projection!(û, q, F, wrongmass)
         @test startswith(message(() -> l2_projection!(û, q, F, wrongmass)),
             "ArgumentError: the workspace has buffers of lengths")
+        # a workspace without a mass workspace, as `contract` builds it, leaves `û` alone
+        nomass = SimpleSplines.ContractWorkspace(work.a, work.b, nothing)
+        û₀ = copy(û)
+        @test_throws MethodError l2_projection!(û, q, F, nomass)
+        @test û == û₀
     end
 end

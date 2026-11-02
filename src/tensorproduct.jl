@@ -227,17 +227,21 @@ which allocates nothing.
 `bufs[k]` must have `local_width(bases(B)[k])` entries, or a `DimensionMismatch` is raised;
 their contents on entry do not matter, and on return they are the blocks of
 [`evaluate_all!`](@ref). Their element type is the type the sum is accumulated in, so it must
-hold the promoted type of the basis, the coefficients and `x`.
+hold the promoted type of the basis, the coefficients and `x`, or an `ArgumentError` is raised.
 
 The buffers belong to one task. Two tasks that evaluate at once need a tuple each.
 """
-function evaluate!(bufs::NTuple{D, <:AbstractVector{R}}, B::TensorProductBasis{T, D},
-        û::AbstractArray{S, D}, x, d::NTuple{D, Int} = ntuple(_ -> 0, D)) where {R, T, D, S}
+function evaluate!(bufs::NTuple{D, <:AbstractVector}, B::TensorProductBasis{T, D},
+        û::AbstractArray{S, D}, x, d::NTuple{D, Int} = ntuple(_ -> 0, D)) where {T, D, S}
     size(û) == size(B) || throw(DimensionMismatch(
         "the coefficient array is $(size(û)) but the basis is $(size(B))"))
     widths = local_width(B)
     map(length, bufs) == widths || throw(DimensionMismatch(
         "evaluate! needs buffers of $(widths) entries on the axes, got $(map(length, bufs))"))
+    R = eltype(first(bufs))
+    Rₓ = _evaltype(promote_type(T, S), eltype(x))
+    promote_type(R, Rₓ) === R || throw(ArgumentError(
+        "evaluate! needs buffers that hold $(Rₓ), got buffers of $(R)"))
 
     # Only the local block contributes, so this is the fast path rather than a sum over the
     # whole array. `evaluate_all!` gives the p_d+1 nonzero factors on each axis; their outer
@@ -471,6 +475,9 @@ end
 struct KroneckerMassWorkspace{T, D}
     src::NTuple{D, Vector{T}}
     dst::NTuple{D, Vector{T}}
+
+    # Only with its parameters: at `D = 0` the arguments would leave `T` unbound.
+    KroneckerMassWorkspace{T, D}(src, dst) where {T, D} = new{T, D}(src, dst)
 end
 
 Base.eltype(::KroneckerMassWorkspace{T}) where {T} = T
@@ -484,7 +491,7 @@ which allocates nothing.
 
 The workspace holds two buffers of `size(mass_factors(op)[k], 1)` entries for each axis `k`.
 The solve takes `y` and `x` as arrays of the size of the tensor-product basis, or as vectors of
-`size(op, 1)` entries, and `y === x` is allowed. A `y` of another length raises a
+`size(op, 1)` entries, and `y === x` is allowed. A `y` or an `x` of another length raises a
 `DimensionMismatch`; a workspace whose element type is not `eltype(y)`, or whose buffer
 lengths do not fit `op`, raises an `ArgumentError`. `mass_solve!(y, op, x)` builds a
 workspace of `eltype(y)` on each call.
@@ -519,6 +526,8 @@ function mass_solve!(y::AbstractArray, op::KroneckerMass{T, D}, x::AbstractArray
             "$(map(length, work.dst)) but the operator needs $(op.dims)"))
     length(y) == prod(op.dims) || throw(DimensionMismatch(
         "the array has $(length(y)) entries but the operator acts on $(op.dims)"))
+    length(x) == length(y) || throw(DimensionMismatch(
+        "the argument has $(length(x)) entries but the operator acts on $(op.dims)"))
     y === x || copyto!(y, x)
     _solve_axes!(y, op.dims, op.ops, work.src, work.dst, 1)
     return y
@@ -930,20 +939,21 @@ end
 
 function l2_projection!(û::AbstractArray, q::TensorProductQuadrature{T, D}, f) where {T, D}
     # The size of `û` is checked before `f` is sampled on the whole grid.
-    _check_coefficients(û, q)
+    _check_coefficients(q, û)
     F = f isa AbstractArray ? f : quadrature_sample(q, f)
     l2_projection!(û, q, F, contract_workspace(q, eltype(û)))
 end
 
 function l2_projection!(û::AbstractArray, q::TensorProductQuadrature{T, D},
-        F::AbstractArray, work::ContractWorkspace) where {T, D}
-    _check_coefficients(û, q)
+        F::AbstractArray,
+        work::ContractWorkspace{<:Any, <:KroneckerMassWorkspace}) where {T, D}
+    _check_coefficients(q, û)
     contract!(û, q, F, work)
     mass_solve!(û, mass_operator(q), û, work.mass)
     return û
 end
 
-function _check_coefficients(û::AbstractArray, q::TensorProductQuadrature)
+function _check_coefficients(q::TensorProductQuadrature, û::AbstractArray)
     size(û) == size(q.basis) || throw(DimensionMismatch(
         "the coefficient array is $(size(û)) but the basis is $(size(q.basis))"))
     return nothing

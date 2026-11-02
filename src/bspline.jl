@@ -639,8 +639,8 @@ caller's buffer `buf`, which allocates nothing.
 `buf` must have [`local_width`](@ref)`(b)` entries, or a `DimensionMismatch` is raised; its
 contents on entry do not matter, and on return they are the local block of
 [`evaluate_all!`](@ref). Its element type is the type the sum is accumulated in, so it must
-hold `promote_type(eltype(b), eltype(û), typeof(x))`: a `ForwardDiff.Dual` argument takes a
-buffer of `Dual`s.
+hold `promote_type(eltype(b), eltype(û), typeof(x))`, or an `ArgumentError` is raised: a
+`ForwardDiff.Dual` argument takes a buffer of `Dual`s.
 
 A buffer belongs to one task. Two tasks that evaluate at once need a buffer each.
 
@@ -653,14 +653,17 @@ julia> evaluate!(buf, b, û, 0.3, 1) == evaluate(b, û, 0.3, 1)
 true
 ```
 """
-function evaluate!(buf::AbstractVector, b::AbstractBSplineBasis, û::AbstractVector,
-        x::Number, d::Integer = 0)
+function evaluate!(buf::AbstractVector{B}, b::AbstractBSplineBasis{T},
+        û::AbstractVector{S}, x::Number, d::Integer = 0) where {B, T, S}
     length(û) == nbasis(b) || throw(DimensionMismatch(
         "the coefficient vector has $(length(û)) entries but the basis has $(nbasis(b))"))
     w = local_width(b)
     length(buf) == w || throw(DimensionMismatch(
         "evaluate! needs a buffer of $(w) entries for this basis, got $(length(buf)); " *
         "see `local_width`"))
+    R = _evaltype(promote_type(T, S), typeof(x))
+    promote_type(B, R) === B || throw(ArgumentError(
+        "evaluate! needs a buffer that holds $(R), got a buffer of $(B)"))
     _evaluate_block!(buf, b, û, x, d)
 end
 
