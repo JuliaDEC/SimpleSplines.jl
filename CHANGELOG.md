@@ -5,7 +5,7 @@ All notable changes to SimpleSplines.jl are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — targeting 0.3.5
+## [Unreleased] — targeting 0.4.0
 
 ### New Features
 
@@ -92,6 +92,10 @@ so the solve ran on whatever the rest of `y` held. It raises a `DimensionMismatc
 length is not that of `y`. `\` is not affected: it builds its output with `similar(x)`, and a
 wrong-length `x` raises a `DimensionMismatch` there in 0.3.4 and in this release. This fixes known
 issue K8. Earlier releases were not checked.
+
+## [0.3.5] — 2026-11-02
+
+### Bug Fixes
 
 `mass_operator` of a periodic basis on a `UniformMesh`, and `CirculantMass` itself, raised
 `MethodError: … plan_rfft … is ambiguous` whenever FFTA 0.3.2 or later was loaded beside FFTW.
