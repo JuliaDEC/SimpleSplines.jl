@@ -1,4 +1,5 @@
 using SimpleSplines
+using FFTA: FFTA
 using LinearAlgebra
 using Random
 using SparseArrays
@@ -58,6 +59,19 @@ Random.seed!(0x2f7a91c4)
             # and on several right-hand sides at once
             B = randn(n, 3)
             @test circ \ B ≈ fact \ B atol = 1e-10
+        end
+    end
+
+    @testset "$(rpad("the FFT plans build beside FFTA's plan_rfft methods",76))" begin
+        # FFTA, loaded above as Makie loads it, adds `plan_rfft` and `plan_brfft` methods that
+        # make the plain FFTW calls ambiguous
+        for T in (Float32, Float64), n in (15, 16)
+
+            q = SplineQuadrature(PeriodicBSplineBasis(UniformMesh(n, T(2π)), 3))
+            circ = mass_operator(q)
+            @test circ isa CirculantMass{T}
+            b = randn(T, n)
+            @test mass_matrix(q) * (circ \ b) ≈ b rtol = 64 * eps(T)
         end
     end
 
