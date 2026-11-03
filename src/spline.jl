@@ -119,6 +119,10 @@ The `d`-th derivative of `s` at `x`. For a tensor product `d` is a per-axis tupl
 evaluate(s::Spline, x) = evaluate(s.basis, s.coefficients, x)
 evaluate(s::Spline, x, d) = evaluate(s.basis, s.coefficients, x, d)
 
+function evaluate!(buf::AbstractVector, s::Spline, x::Number, d::Integer = 0)
+    evaluate!(buf, s.basis, s.coefficients, x, d)
+end
+
 @doc raw"""
     SplineDerivative
 

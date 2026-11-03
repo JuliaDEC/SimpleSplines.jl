@@ -1,0 +1,684 @@
+using ForwardDiff: ForwardDiff, Dual
+using LinearAlgebra
+using Random
+using SimpleSplines
+using Test
+
+Random.seed!(1234)
+
+# Fixed-arity barriers: the arguments arrive with concrete types, and the call runs once
+# before it is measured.
+allocs(f::F, a::A, b::B, c::C) where {F, A, B, C} = (f(a, b, c); @allocated f(a, b, c))
+function allocs(f::F, a::A, b::B, c::C, d::D) where {F, A, B, C, D}
+    f(a, b, c, d)
+    @allocated f(a, b, c, d)
+end
+function allocs(f::F, a::A, b::B, c::C, d::D, e::E) where {F, A, B, C, D, E}
+    f(a, b, c, d, e)
+    @allocated f(a, b, c, d, e)
+end
+
+# Coverage instrumentation allocates on every line, so the readings mean nothing under it.
+const MEASURE = Base.JLOptions().code_coverage == 0
+
+# The outcome of a call: its value, or the type of the exception it raised.
+outcome(f) =
+    try
+        f()
+    catch e
+        typeof(e)
+    end
+
+# The message of the exception that `f` raises.
+message(f) =
+    try
+        f()
+        ""
+    catch e
+        sprint(showerror, e)
+    end
+
+const Dual12 = Dual{Nothing, Float64, 12}
+dual(x) = Dual{Nothing}(Float64(x), ntuple(i -> Float64(i) / 7, 12)...)
+
+function bases_1d(::Type{T}) where {T}
+    m = UniformMesh(8, T(0) .. T(1))
+    (BSplineBasis(m, 1), BSplineBasis(m, 3), BSplineBasis(m, 3, Periodic()),
+        BSplineBasis(m, 3, Dirichlet()), BSplineBasis(m, 3, Natural()))
+end
+
+function basis_2d(::Type{T}, n = 8) where {T}
+    BSplineBasis(UniformMesh(n, T(0) .. T(1)), 3, Periodic()) ⊗
+    BSplineBasis(UniformMesh(n, T(-1) .. T(2)), 3)
+end
+
+function basis_3d(::Type{T}, n = 4) where {T}
+    BSplineBasis(UniformMesh(n, T(0) .. T(1)), 3) ⊗
+    BSplineBasis(UniformMesh(n, T(0) .. T(2)), 3, Periodic()) ⊗
+    BSplineBasis(UniformMesh(n, T(-1) .. T(1)), 3, Dirichlet())
+end
+
+# The same basis on more cells: a workspace built for it has longer buffers, so a missing
+# size check shows as a wrong result or an error rather than as a write out of bounds.
+larger(B) = ndims(B) == 2 ? basis_2d(eltype(B), 9) : basis_3d(eltype(B), 5)
+
+@testset "$(rpad("evaluate! on a one-dimensional basis",76))" begin
+    for T in (Float32, Float64), b in bases_1d(T)
+
+        û = randn(T, nbasis(b))
+        buf = zeros(T, local_width(b))
+        s = Spline(b, û)
+        # interior points, a breakpoint, both ends, and points outside the domain
+        for x in T[0.37, 0.5, 0, 1, prevfloat(T(1)), -0.25, 1.75], d in 0:(degree(b) + 1)
+
+            @test (@inferred evaluate!(buf, b, û, x, d)) == evaluate(b, û, x, d)
+            @test (@inferred evaluate!(buf, s, x, d)) == evaluate(s, x, d)
+        end
+        @test evaluate!(buf, b, û, T(0.37)) == evaluate(b, û, T(0.37))
+        @test evaluate!(buf, s, T(0.37)) == s(T(0.37))
+
+        # A Dual argument with a Dual buffer. `isequal` rather than `==`: a periodic basis at
+        # the ends of its domain gives NaN partials on both sides (K6 of KNOWN_ISSUES.md), and
+        # `==` is false for them.
+        bufd = zeros(Dual12, local_width(b))
+        for x in (0.37, 0.5, 1.0, 1.75), d in 0:1
+
+            @test isequal((@inferred evaluate!(bufd, b, û, dual(x), d)),
+                evaluate(b, û, dual(x), d))
+            @test isequal((@inferred evaluate!(bufd, s, dual(x), d)), evaluate(s, dual(x), d))
+        end
+    end
+end
+
+@testset "$(rpad("evaluate! allocates nothing",76))" begin
+    if MEASURE
+        for T in (Float32, Float64), b in bases_1d(T), d in 0:1
+            û = randn(T, nbasis(b))
+            s = Spline(b, û)
+            x = T(0.37)
+            buf = zeros(T, local_width(b))
+            @test allocs(evaluate!, buf, b, û, x, d) == 0
+            @test allocs(evaluate!, buf, s, x, d) == 0
+            @test allocs(evaluate, b, û, x, d) > 0
+            @test allocs(evaluate, s, x, d) > 0
+
+            bufd = zeros(Dual12, local_width(b))
+            @test allocs(evaluate!, bufd, b, û, dual(0.37), d) == 0
+            @test allocs(evaluate!, bufd, s, dual(0.37), d) == 0
+            @test allocs(evaluate, b, û, dual(0.37), d) > 0
+        end
+    end
+end
+
+@testset "$(rpad("evaluate! refuses a buffer of the wrong length",76))" begin
+    for b in bases_1d(Float64)
+        û = randn(nbasis(b))
+        w = local_width(b)
+        for n in (w - 1, w + 1)
+            @test_throws DimensionMismatch evaluate!(zeros(n), b, û, 0.37)
+            msg = message(() -> evaluate!(zeros(n), b, û, 0.37))
+            @test startswith(msg,
+                "DimensionMismatch: evaluate! needs a buffer of $(w) entries for this " *
+                "basis, got $(n)")
+            @test_throws DimensionMismatch evaluate!(zeros(n), Spline(b, û), 0.37)
+        end
+        # the coefficient check of `evaluate`
+        @test_throws DimensionMismatch evaluate!(zeros(w), b, zeros(nbasis(b) + 1), 0.37)
+        @test startswith(message(() -> evaluate!(zeros(w), b, zeros(nbasis(b) + 1), 0.37)),
+            "DimensionMismatch: the coefficient vector has $(nbasis(b) + 1) entries")
+        # a buffer that cannot hold the type of the point, a Float64 point into a Float32
+        # buffer or a Dual point into a Float64 buffer
+        @test_throws ArgumentError evaluate!(zeros(Float32, w), b, û, 0.37)
+        @test startswith(message(() -> evaluate!(zeros(Float32, w), b, û, 0.37)),
+            "ArgumentError: evaluate! needs a buffer that holds the point type Float64, " *
+            "got a buffer of Float32")
+        @test_throws ArgumentError evaluate!(zeros(Float32, w), Spline(b, û), 0.37)
+        @test_throws ArgumentError evaluate!(zeros(w), b, û, dual(0.37))
+        @test startswith(message(() -> evaluate!(zeros(w), b, û, dual(0.37))),
+            "ArgumentError: evaluate! needs a buffer that holds the point type $(Dual12), " *
+            "got a buffer of Float64")
+        # an integer buffer cannot hold the fractional knot arithmetic, even at an Int point,
+        # where the allocating form returns a Float64
+        @test_throws ArgumentError evaluate!(zeros(Int, w), b, û, 0)
+        @test startswith(message(() -> evaluate!(zeros(Int, w), b, û, 0)),
+            "ArgumentError: evaluate! needs a buffer of a floating-point type, because the " *
+            "knot arithmetic is fractional, got a buffer of Int64")
+        @test_throws ArgumentError evaluate!(zeros(Int, w), Spline(b, û), 0)
+        @test evaluate(b, û, 0) isa Float64
+        # an Int point does take a floating-point buffer
+        @test evaluate!(zeros(w), b, û, 0) == evaluate(b, û, 0)
+    end
+end
+
+@testset "$(rpad("evaluate! into a narrow buffer subtracts the knots before narrowing",76))" begin
+    # Two knots 1 apart at 1e8 are one Float32. The distances are exact in the Float64 basis,
+    # so the Float32 result is the Float64 one, rounded.
+    b = BSplineBasis(UniformMesh(8, 1.0e8 .. (1.0e8 + 8)), 3)
+    û = collect(1.0:nbasis(b))
+    buf = zeros(Float32, local_width(b))
+    for x in (Float32(1.0e8), Float32(1.0e8 + 8)), d in 0:2
+
+        v = @inferred evaluate!(buf, b, û, x, d)
+        @test v isa Float32
+        @test isfinite(v)
+        @test isapprox(v, Float32(evaluate(b, û, Float64(x), d)); rtol = 8 * eps(Float32),
+            atol = 8 * eps(Float32) * maximum(abs, û))
+        @test isfinite(evaluate(b, û, x, d))
+    end
+    # an interior point, where the Float32 grid is fine enough to hold it
+    b = BSplineBasis(UniformMesh(8, 1.0e6 .. (1.0e6 + 8)), 3)
+    x = Float32(1.0e6 + 3.5)
+    for d in 0:2
+        v = evaluate!(zeros(Float32, local_width(b)), b, û, x, d)
+        @test isapprox(v, Float32(evaluate(b, û, Float64(x), d)); rtol = 8 * eps(Float32),
+            atol = 8 * eps(Float32) * maximum(abs, û) * 8^d)
+    end
+end
+
+@testset "$(rpad("evaluate! of a Float64 spline at a Float32 point",76))" begin
+    for b in bases_1d(Float64)
+        û = randn(nbasis(b))
+        s = Spline(b, û)
+        buf = zeros(Float32, local_width(b))
+        for x in Float32[0.37, 0.5, 0, 1, prevfloat(1.0f0), -0.25, 1.75], d in 0:2
+
+            ref = Float32(evaluate(b, û, Float64(x), d))
+            v = @inferred evaluate!(buf, b, û, x, d)
+            @test v isa Float32
+            # The sum cancels, so the floor is the size of its terms: the coefficients, times
+            # the size of a basis function after d derivatives on 8 cells.
+            atol = 8 * eps(Float32) * maximum(abs, û) * (8 * degree(b))^d
+            @test isapprox(v, ref; rtol = 8 * eps(Float32), atol)
+            w = @inferred evaluate!(buf, s, x, d)
+            @test w isa Float32
+            @test w == v
+        end
+        if MEASURE
+            @test allocs(evaluate!, buf, b, û, 0.37f0, 1) == 0
+            @test allocs(evaluate!, buf, s, 0.37f0, 1) == 0
+        end
+    end
+
+    # Float64 point types are unaffected, and a wider buffer holds a Float32 point
+    b = bases_1d(Float64)[2]
+    û = randn(nbasis(b))
+    @test evaluate!(zeros(local_width(b)), b, û, 0.37f0) isa Float64
+
+    for B in (basis_2d(Float64), basis_3d(Float64))
+        D = ndims(B)
+        û = randn(size(B)...)
+        bufs = map(w -> zeros(Float32, w), local_width(B))
+        x = D == 2 ? (0.37f0, 0.4f0) : (0.37f0, 1.2f0, -0.3f0)
+        for d in (ntuple(_ -> 0, D), ntuple(k -> k == 1 ? 1 : 0, D))
+            ref = Float32(evaluate(B, û, Float64.(x), d))
+            v = @inferred evaluate!(bufs, B, û, x, d)
+            @test v isa Float32
+            atol = 8 * eps(Float32) * maximum(abs, û) * 24^sum(d)
+            @test isapprox(v, ref; rtol = 8 * eps(Float32), atol)
+        end
+        if MEASURE
+            d = ntuple(k -> k == 1 ? 1 : 0, D)
+            @test allocs(evaluate!, bufs, B, û, x, d) == 0
+        end
+    end
+end
+
+@testset "$(rpad("the allocating forms return the type of the point",76))" begin
+    # The reference is the Float64 evaluation at the same point, rounded to Float32. The sum
+    # cancels, so the absolute floor is the size of its terms: the coefficients, times the size
+    # of a basis function after d derivatives on 8 cells.
+    for b in bases_1d(Float64)
+        û = randn(nbasis(b))
+        s = Spline(b, û)
+        j = nbasis(b) ÷ 2
+        X = Float32[0.2, 0.37, 0.9]
+        for x in Float32[0.37, 0.5, 0, 1, -0.25, 1.75], d in 0:2
+
+            tol = 8 * eps(Float32) * (8 * degree(b))^d
+            near(v, ref) = isapprox(v, ref; rtol = 8 * eps(Float32),
+                atol = tol * max(1, maximum(abs, û)))
+            v = @inferred evaluate(b, û, x, d)
+            @test v isa Float32
+            @test near(v, Float32(evaluate(b, û, Float64(x), d)))
+            @test near(v, evaluate!(zeros(Float32, local_width(b)), b, û, x, d))
+            w = @inferred evaluate(s, x, d)
+            @test w isa Float32
+            @test w == v
+            vj = @inferred evaluate(b, j, x, d)
+            @test vj isa Float32
+            @test near(vj, Float32(evaluate(b, j, Float64(x), d)))
+            j₀, vals = @inferred evaluate_all(b, x, d)
+            @test vals isa Vector{Float32}
+            @test all(near(vals[t], Float32(evaluate_all(b, Float64(x), d)[2][t]))
+            for t in eachindex(vals))
+        end
+        for d in 0:1
+            @test (@inferred evaluate(b, û, X, d)) isa Vector{Float32}
+            @test (@inferred evaluate(b, j, X, d)) isa Vector{Float32}
+            @test evaluate(b, û, X, d) == [evaluate(b, û, x, d) for x in X]
+        end
+
+        # a Float64 point keeps Float64, and so does a Float64 basis at a Float64 point
+        @test (@inferred evaluate(b, û, 0.37)) isa Float64
+        @test (@inferred evaluate(b, j, 0.37)) isa Float64
+        @test (@inferred evaluate(b, û, [0.2, 0.37])) isa Vector{Float64}
+        @test evaluate_all(b, 0.37)[2] isa Vector{Float64}
+
+        # Complex coefficients: the result is complex in the type of the point
+        ûc = û .+ im .* randn(nbasis(b))
+        vc = @inferred evaluate(b, ûc, 0.37f0)
+        @test vc isa ComplexF32
+        @test isapprox(vc, ComplexF32(evaluate(b, ûc, 0.37)); rtol = 8 * eps(Float32),
+            atol = 8 * eps(Float32) * maximum(abs, ûc))
+        @test (@inferred evaluate(b, ûc, 0.37)) isa ComplexF64
+        @test (@inferred evaluate(b, ûc, dual(0.37))) isa Complex{Dual12}
+
+        # A Dual point keeps its type
+        @test (@inferred evaluate(b, û, dual(0.37))) isa Dual12
+        @test (@inferred evaluate(b, j, dual(0.37))) isa Dual12
+        @test (@inferred evaluate_all(b, dual(0.37)))[2] isa Vector{Dual12}
+
+        # A point that is not a floating-point type cannot hold the result: the promotion of the
+        # basis and the point stands, so a Float64 basis returns Float64
+        @test (@inferred evaluate(b, û, 1)) isa Float64
+        @test (@inferred evaluate(b, û, 1 // 3)) isa Float64
+        @test (@inferred evaluate(b, j, 1)) isa Float64
+    end
+
+    # a Float32 basis keeps its type at an Int point, and a Float64 point stays Float64
+    b32 = bases_1d(Float32)[2]
+    û32 = randn(Float32, nbasis(b32))
+    @test (@inferred evaluate(b32, û32, 1)) isa Float32
+    @test (@inferred evaluate(b32, û32, 0.37)) isa Float64
+    @test (@inferred evaluate(b32, û32, 0.37f0)) isa Float32
+
+    for B in (basis_2d(Float64), basis_3d(Float64))
+        D = ndims(B)
+        û = randn(size(B)...)
+        x = D == 2 ? (0.37f0, 0.4f0) : (0.37f0, 1.2f0, -0.3f0)
+        x64 = Float64.(x)
+        for d in (ntuple(_ -> 0, D), ntuple(k -> k == 1 ? 1 : 0, D))
+            atol = 8 * eps(Float32) * maximum(abs, û) * 24^sum(d)
+            v = @inferred evaluate(B, û, x, d)
+            @test v isa Float32
+            @test isapprox(v, Float32(evaluate(B, û, x64, d)); rtol = 8 * eps(Float32), atol)
+            w = @inferred evaluate(Spline(B, û), x, d)
+            @test w isa Float32
+            @test w == v
+            I = ntuple(_ -> 2, D)
+            vi = @inferred evaluate(B, I, x, d)
+            @test vi isa Float32
+            @test isapprox(vi, Float32(evaluate(B, I, x64, d)); rtol = 8 * eps(Float32),
+                atol = 8 * eps(Float32) * 24^sum(d))
+            j₀, bufs = @inferred evaluate_all(B, x, d)
+            @test all(buf -> buf isa Vector{Float32}, bufs)
+        end
+        @test (@inferred evaluate(B, û, x64)) isa Float64
+        @test (@inferred evaluate_all(B, x64))[2][1] isa Vector{Float64}
+        ûc = û .+ im .* randn(size(B)...)
+        @test (@inferred evaluate(B, ûc, x)) isa ComplexF32
+        @test (@inferred evaluate(B, û, map(dual, x))) isa Dual12
+        @test (@inferred evaluate(B, û, map(Int ∘ round, x))) isa Float64
+    end
+end
+
+@testset "$(rpad("coefficients that are not IEEE floats keep their type",76))" begin
+    x = 0.37
+    for b in bases_1d(Float64)
+        û = collect(range(0.1, 2.0; length = nbasis(b)))
+        φ = [evaluate(b, j, x) for j in 1:nbasis(b)]
+        φ′ = [evaluate(b, j, x, 1) for j in 1:nbasis(b)]
+
+        # Dual coefficients at a Float64 point: the gradient of the value with respect to the
+        # coefficients is the vector of the basis values at the point.
+        g = ForwardDiff.gradient(c -> evaluate(b, c, x), û)
+        @test g isa Vector{Float64}
+        @test isapprox(g, φ; rtol = 8 * eps(), atol = 8 * eps())
+        g′ = ForwardDiff.gradient(c -> evaluate(b, c, x, 1), û)
+        @test isapprox(g′, φ′; rtol = 8 * eps(), atol = 8 * eps() * 24)
+        @test isapprox(ForwardDiff.gradient(c -> Spline(b, c)(x), û), φ; rtol = 8 * eps(),
+            atol = 8 * eps())
+        @test isapprox(ForwardDiff.gradient(c -> evaluate(b, c, Float32(x)), û),
+            [evaluate(b, j, Float32(x)) for j in 1:nbasis(b)]; rtol = 8 * eps(Float32),
+            atol = 8 * eps(Float32))
+
+        ûd = map(dual, û)
+        vd = @inferred evaluate(b, ûd, x)
+        @test vd isa Dual12
+        buf = zeros(Dual12, local_width(b))
+        @test (@inferred evaluate!(buf, b, ûd, x)) == vd
+        # A Float64 buffer cannot hold Dual coefficients: the conversion of the sum refuses them.
+        @test outcome(() -> evaluate!(zeros(local_width(b)), b, ûd, x)) == MethodError
+
+        # BigFloat coefficients at a Float64 or a Float32 point return a BigFloat.
+        for xp in (x, Float32(x))
+            vb = evaluate(b, big.(û), xp)
+            @test vb isa BigFloat
+            @test isapprox(vb, evaluate(b, û, Float64(xp)); rtol = 8 * eps())
+            # Complex BigFloat coefficients return a Complex{BigFloat}.
+            @test evaluate(b, complex.(big.(û), big.(û)), xp) isa Complex{BigFloat}
+        end
+    end
+
+    # A BigFloat basis at a Float64 point returns a BigFloat.
+    for bb in bases_1d(BigFloat)
+        û = big.(collect(range(0.1, 2.0; length = nbasis(bb))))
+        @test evaluate(bb, û, x) isa BigFloat
+        @test evaluate(bb, Float64.(û), x) isa BigFloat
+        @test evaluate(bb, 2, x) isa BigFloat
+        @test evaluate_all(bb, x)[2] isa Vector{BigFloat}
+    end
+
+    for B in (basis_2d(Float64), basis_3d(Float64))
+        D = ndims(B)
+        Û = ones(size(B)...)
+        xB = D == 2 ? (0.3, 0.4) : (0.3, 1.2, -0.3)
+        g = ForwardDiff.gradient(c -> evaluate(B, c, xB), Û)
+        @test g isa Array{Float64, D}
+        @test isapprox(g, [evaluate(B, I, xB) for I in CartesianIndices(B)];
+            rtol = 8 * eps(), atol = 8 * eps())
+        @test evaluate(B, big.(Û), xB) isa BigFloat
+    end
+end
+
+@testset "$(rpad("complex coefficients at derivative orders above zero",76))" begin
+    # The derivative step compares knot differences, which stay real in a complex buffer.
+    for b in bases_1d(Float64)
+        ur = randn(nbasis(b))
+        ui = randn(nbasis(b))
+        for x in (0.37, 0.37f0), d in 1:2
+
+            T = typeof(x)
+            v = @inferred evaluate(b, ur .+ im .* ui, x, d)
+            @test v isa Complex{T}
+            tol = 8 * eps(T) * (8 * degree(b))^d * 2
+            @test isapprox(real(v), evaluate(b, ur, x, d); rtol = 8 * eps(T), atol = tol)
+            @test isapprox(imag(v), evaluate(b, ui, x, d); rtol = 8 * eps(T), atol = tol)
+            @test abs(imag(v)) > 0 || degree(b) < d
+        end
+    end
+end
+
+@testset "$(rpad("evaluate! on hostile arguments matches evaluate",76))" begin
+    for T in (Float32, Float64), b in bases_1d(T)
+
+        û = randn(T, nbasis(b))
+        buf = zeros(T, local_width(b))
+        for x in T[0, -0.0, nextfloat(T(0)), floatmin(T), eps(T), 1, floatmax(T) / 2,
+                floatmax(T), Inf, -Inf, NaN, 1e-8, 1e-4, 1e4, 1e8],
+            d in (0, 1, 4, -1)
+
+            @test isequal(outcome(() -> evaluate!(buf, b, û, x, d)),
+                outcome(() -> evaluate(b, û, x, d)))
+        end
+        # `d < 0` is the `ArgumentError` of `evaluate_all!`
+        @test_throws ArgumentError evaluate!(buf, b, û, T(0.5), -1)
+    end
+    # BigFloat: the values agree
+    for b in bases_1d(BigFloat)
+        û = randn(nbasis(b))
+        buf = zeros(BigFloat, local_width(b))
+        for x in big.([0.37, 1.0, 1.5]), d in 0:2
+
+            @test evaluate!(buf, b, û, x, d) == evaluate(b, û, x, d)
+        end
+    end
+    # degree 0 on one cell
+    for b in (BSplineBasis(UniformMesh(1, 0 .. 1), 0),
+        BSplineBasis(UniformMesh(1, 0 .. 1), 0, Periodic()))
+        û = [2.5]
+        for x in (0.0, 0.5, 1.0, 1.5, -0.5), d in 0:1
+
+            @test evaluate!(zeros(1), b, û, x, d) == evaluate(b, û, x, d)
+        end
+    end
+end
+
+@testset "$(rpad("evaluate! on a tensor-product basis",76))" begin
+    for T in (Float32, Float64), B in (basis_2d(T), basis_3d(T))
+
+        D = ndims(B)
+        û = randn(T, size(B)...)
+        bufs = map(w -> zeros(T, w), local_width(B))
+        bufsd = map(w -> zeros(Dual12, w), local_width(B))
+        points = D == 2 ? (T.((0.37, 0.4)), T.((0.0, 2.0)), T.((1.5, 3.0))) :
+                 (T.((0.37, 1.2, -0.3)), T.((1.0, 0.0, 1.0)), T.((-0.5, 2.5, 0.2)))
+        orders = (ntuple(_ -> 0, D), ntuple(k -> k == 1 ? 1 : 0, D),
+            ntuple(k -> k == D ? 1 : 0, D))
+        for x in points, d in orders
+
+            @test (@inferred evaluate!(bufs, B, û, x, d)) == evaluate(B, û, x, d)
+            xd = map(dual, x)
+            @test isequal((@inferred evaluate!(bufsd, B, û, xd, d)), evaluate(B, û, xd, d))
+        end
+        @test evaluate!(bufs, B, û, first(points)) == evaluate(B, û, first(points))
+
+        if MEASURE
+            x = first(points)
+            d = ntuple(k -> k == 1 ? 1 : 0, D)
+            @test allocs(evaluate!, bufs, B, û, x, d) == 0
+            @test allocs(evaluate, B, û, x, d) > 0
+            @test allocs(evaluate!, bufsd, B, û, map(dual, x), d) == 0
+            @test allocs(evaluate, B, û, map(dual, x), d) > 0
+        end
+
+        # a wrong length on any one axis
+        for k in 1:D
+            w = local_width(B)
+            bad = ntuple(i -> zeros(T, i == k ? w[i] + 1 : w[i]), D)
+            @test_throws DimensionMismatch evaluate!(bad, B, û, first(points))
+            @test startswith(message(() -> evaluate!(bad, B, û, first(points))),
+                "DimensionMismatch: evaluate! needs buffers of $(w) entries on the axes, " *
+                "got $(map(length, bad))")
+        end
+        # a coefficient array of the wrong size, as `evaluate` refuses it
+        ûbad = zeros(T, (size(B) .+ 1)...)
+        @test_throws DimensionMismatch evaluate!(bufs, B, ûbad, first(points))
+        @test startswith(message(() -> evaluate!(bufs, B, ûbad, first(points))),
+            "DimensionMismatch: the coefficient array is $(size(ûbad)) but the basis is " *
+            "$(size(B))")
+        # buffers that cannot hold the type of the point, for Dual points or of a narrower type
+        @test_throws ArgumentError evaluate!(bufs, B, û, map(dual, first(points)))
+        if T === Float64
+            narrow = map(w -> zeros(Float32, w), local_width(B))
+            @test_throws ArgumentError evaluate!(narrow, B, û, first(points))
+            @test startswith(message(() -> evaluate!(narrow, B, û, first(points))),
+                "ArgumentError: evaluate! needs buffers that hold the point type Float64, " *
+                "got buffers of Float32")
+            # integer buffers, which cannot hold the fractional knot arithmetic, even at an
+            # Int point
+            ints = map(w -> zeros(Int, w), local_width(B))
+            xi = ntuple(_ -> 0, D)
+            @test_throws ArgumentError evaluate!(ints, B, û, xi)
+            @test startswith(message(() -> evaluate!(ints, B, û, xi)),
+                "ArgumentError: evaluate! needs buffers of a floating-point type, because " *
+                "the knot arithmetic is fractional, got buffers of Int64")
+        end
+    end
+end
+
+@testset "$(rpad("mass_solve! with a workspace",76))" begin
+    for T in (Float32, Float64), B in (basis_2d(T), basis_3d(T))
+
+        op = mass_operator(TensorProductQuadrature(B))
+        x = randn(T, size(B)...)
+        work = mass_workspace(op, T)
+        y = similar(x)
+        @test (@inferred mass_solve!(y, op, x, work)) === y
+        @test y == mass_solve!(similar(x), op, x)
+        # an independent reference: the assembled Kronecker product
+        @test vec(y) ≈ Matrix(op) \ vec(x) rtol = 100 * eps(T) * cond(Matrix(op))
+        # y and x may alias, and a vector of length `length(B)` is accepted
+        z = copy(x)
+        @test mass_solve!(z, op, z, work) == y
+        v = vec(copy(x))
+        @test mass_solve!(v, op, v, work) == vec(y)
+
+        if MEASURE
+            @test allocs(mass_solve!, y, op, x, work) == 0
+            @test allocs(mass_solve!, y, op, x) > 0
+        end
+
+        # a workspace of the wrong element type names both types
+        S = T === Float64 ? Float32 : Float64
+        bad = mass_workspace(op, S)
+        @test_throws ArgumentError mass_solve!(y, op, x, bad)
+        @test startswith(message(() -> mass_solve!(y, op, x, bad)),
+            "ArgumentError: the workspace has element type $(S) but the array has element " *
+            "type $(T)")
+        # a workspace of a larger operator names both sizes
+        other = mass_operator(TensorProductQuadrature(larger(B)))
+        badsize = mass_workspace(other, T)
+        @test_throws ArgumentError mass_solve!(y, op, x, badsize)
+        @test startswith(message(() -> mass_solve!(y, op, x, badsize)),
+            "ArgumentError: the workspace has buffers of lengths " *
+            "$(map(n -> size(n, 1), mass_factors(other))) and " *
+            "$(map(n -> size(n, 1), mass_factors(other))) but the operator needs " *
+            "$(map(n -> size(n, 1), mass_factors(op)))")
+        # a workspace of another dimension
+        # (of 19 functions per axis, longer than every axis of `B`)
+        b19 = BSplineBasis(UniformMesh(16, T(0) .. T(1)), 3)
+        flat = mass_workspace(mass_operator(TensorProductQuadrature(b19 ⊗ b19 ⊗ b19 ⊗ b19)), T)
+        @test_throws ArgumentError mass_solve!(y, op, x, flat)
+        # a long `src` buffer, a long `dst` buffer, and both too long by different amounts,
+        # which the message names each at its own place
+        dims = map(n -> size(n, 1), mass_factors(op))
+        grow(vs, m) = map(v -> [v; zeros(T, m)], vs)
+        longsrc = typeof(work)(grow(work.src, 1), work.dst)
+        @test_throws ArgumentError mass_solve!(y, op, x, longsrc)
+        @test startswith(message(() -> mass_solve!(y, op, x, longsrc)),
+            "ArgumentError: the workspace has buffers of lengths $(dims .+ 1) and $(dims) " *
+            "but the operator needs $(dims)")
+        longdst = typeof(work)(work.src, grow(work.dst, 1))
+        @test_throws ArgumentError mass_solve!(y, op, x, longdst)
+        @test startswith(message(() -> mass_solve!(y, op, x, longdst)),
+            "ArgumentError: the workspace has buffers of lengths $(dims) and $(dims .+ 1) " *
+            "but the operator needs $(dims)")
+        longboth = typeof(work)(grow(work.src, 2), grow(work.dst, 1))
+        @test startswith(message(() -> mass_solve!(y, op, x, longboth)),
+            "ArgumentError: the workspace has buffers of lengths $(dims .+ 2) and " *
+            "$(dims .+ 1) but the operator needs $(dims)")
+        # an array of the wrong length
+        long = zeros(T, length(x) + 1)
+        @test_throws DimensionMismatch mass_solve!(long, op, vec(x), work)
+        @test startswith(message(() -> mass_solve!(long, op, vec(x), work)),
+            "DimensionMismatch: the array has $(length(x) + 1) entries but the operator " *
+            "acts on $(size(x))")
+        # an argument shorter or longer than `y`, through both forms
+        for n in (length(x) - 5, length(x) + 1)
+            xbad = ones(T, n)
+            @test_throws DimensionMismatch mass_solve!(y, op, xbad, work)
+            @test_throws DimensionMismatch mass_solve!(y, op, xbad)
+            @test startswith(message(() -> mass_solve!(y, op, xbad, work)),
+                "DimensionMismatch: the argument has $(n) entries but the operator acts on " *
+                "$(size(x))")
+        end
+    end
+end
+
+# The load array by its definition, from the dense per-axis tables.
+function reference_contract(q, F, d)
+    A = [Matrix(basis_values(quadratures(q)[k], d[k])) *
+         Diagonal(quadrature_weights(quadratures(q)[k])) for k in 1:ndims(q)]
+    reshape(foldl(kron, reverse(A)) * vec(F), size(q)...)
+end
+
+@testset "$(rpad("contract! and l2_projection! with a workspace",76))" begin
+    for T in (Float32, Float64), B in (basis_2d(T), basis_3d(T))
+
+        D = ndims(B)
+        q = TensorProductQuadrature(B)
+        F = randn(T, quadrature_grid_size(q)...)
+        F₀ = copy(F)
+        work = contract_workspace(q, T)
+        L = zeros(T, size(B)...)
+        for d in (ntuple(_ -> 0, D), ntuple(k -> k == D ? 1 : 0, D))
+            @test (@inferred contract!(L, q, F, work, d)) === L
+            @test L == contract(q, F, d)
+            @test L ≈ reference_contract(q, F, d) rtol = 100 * eps(T)
+        end
+        @test contract!(L, q, F, work) == contract(q, F)
+        @test F == F₀                                   # the sample is not consumed
+
+        û = zeros(T, size(B)...)
+        @test (@inferred l2_projection!(û, q, F, work)) === û
+        @test û == l2_projection!(zeros(T, size(B)...), q, F)
+        @test û == l2_projection(q, F)
+        @test F == F₀
+
+        if MEASURE
+            d = ntuple(k -> k == D ? 1 : 0, D)
+            @test allocs(contract!, L, q, F, work, d) == 0
+            @test allocs(contract, q, F, d) > 0
+            @test allocs(l2_projection!, û, q, F, work) == 0
+            @test allocs(l2_projection!, û, q, F) > 0
+        end
+
+        # wrong sizes, as the allocating forms raise them
+        Fbad = zeros(T, (quadrature_grid_size(q) .+ 1)...)
+        @test_throws DimensionMismatch contract!(L, q, Fbad, work)
+        @test message(() -> contract!(L, q, Fbad, work)) ==
+              message(() -> contract(q, Fbad))
+        Lbad = zeros(T, (size(B) .+ 1)...)
+        @test_throws DimensionMismatch contract!(Lbad, q, F, work)
+        @test startswith(message(() -> contract!(Lbad, q, F, work)),
+            "DimensionMismatch: the load array is $(size(Lbad)) but the basis is $(size(B))")
+        @test_throws DimensionMismatch l2_projection!(Lbad, q, F, work)
+        @test startswith(message(() -> l2_projection!(Lbad, q, F, work)),
+            "DimensionMismatch: the coefficient array is $(size(Lbad)) but the basis is " *
+            "$(size(B))")
+        # the three-argument form checks `û` before it samples `f`
+        calls = Ref(0)
+        counted = x -> (calls[] += 1; one(T))
+        @test_throws DimensionMismatch l2_projection!(Lbad, q, counted)
+        @test calls[] == 0
+        @test startswith(message(() -> l2_projection!(Lbad, q, counted)),
+            "DimensionMismatch: the coefficient array is $(size(Lbad)) but the basis is " *
+            "$(size(B))")
+
+        # a workspace of the wrong element type names both types
+        S = T === Float64 ? Float32 : Float64
+        bad = contract_workspace(q, S)
+        @test_throws ArgumentError contract!(L, q, F, bad)
+        @test startswith(message(() -> contract!(L, q, F, bad)),
+            "ArgumentError: the workspace has element type $(S) but the load array has " *
+            "element type $(T)")
+        @test_throws ArgumentError l2_projection!(û, q, F, bad)
+        # a workspace of a larger quadrature names both lengths
+        badsize = contract_workspace(TensorProductQuadrature(larger(B)), T)
+        @test_throws ArgumentError contract!(L, q, F, badsize)
+        @test startswith(message(() -> contract!(L, q, F, badsize)),
+            "ArgumentError: the workspace holds buffers of $(length(badsize.a)) and " *
+            "$(length(badsize.b)) entries but this quadrature needs $(length(work.a))")
+        @test length(badsize.a) != length(work.a)
+        @test_throws ArgumentError l2_projection!(û, q, F, badsize)
+        # a long first buffer, a long second buffer, and both too long by different
+        # amounts, which the message names each at its own place
+        n = length(work.a)
+        longa = SimpleSplines.ContractWorkspace([work.a; zero(T)], work.b, work.mass)
+        @test_throws ArgumentError contract!(L, q, F, longa)
+        @test startswith(message(() -> contract!(L, q, F, longa)),
+            "ArgumentError: the workspace holds buffers of $(n + 1) and $(n) entries but " *
+            "this quadrature needs $(n)")
+        longb = SimpleSplines.ContractWorkspace(work.a, [work.b; zero(T)], work.mass)
+        @test_throws ArgumentError contract!(L, q, F, longb)
+        @test startswith(message(() -> contract!(L, q, F, longb)),
+            "ArgumentError: the workspace holds buffers of $(n) and $(n + 1) entries but " *
+            "this quadrature needs $(n)")
+        longab = SimpleSplines.ContractWorkspace([work.a; zeros(T, 2)], [work.b; zero(T)],
+            work.mass)
+        @test startswith(message(() -> contract!(L, q, F, longab)),
+            "ArgumentError: the workspace holds buffers of $(n + 2) and $(n + 1) entries " *
+            "but this quadrature needs $(n)")
+        # a mass workspace of a larger operator
+        wrongmass = SimpleSplines.ContractWorkspace(work.a, work.b, badsize.mass)
+        @test_throws ArgumentError l2_projection!(û, q, F, wrongmass)
+        @test startswith(message(() -> l2_projection!(û, q, F, wrongmass)),
+            "ArgumentError: the workspace has buffers of lengths")
+        # a workspace without a mass workspace, as `contract` builds it, leaves `û` alone
+        nomass = SimpleSplines.ContractWorkspace(work.a, work.b, nothing)
+        û₀ = copy(û)
+        @test_throws MethodError l2_projection!(û, q, F, nomass)
+        @test û == û₀
+    end
+end

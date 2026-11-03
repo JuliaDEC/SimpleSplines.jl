@@ -13,6 +13,7 @@ if "core" in GROUPS
     @safetestset "Spline quadrature" include("quadrature.jl")
     @safetestset "Tensor products" include("tensorproduct.jl")
     @safetestset "Polar splines" include("polar.jl")
+    @safetestset "Caller-held workspaces" include("integration/workspaces.jl")
 end
 if "doctests" in GROUPS
     @safetestset "Doctests" include("quality/doctests.jl")

@@ -71,3 +71,40 @@
   `Float32` spans throw on #39 and no `Float64` span does.
 - **kind:** defect
 - **found:** 2026-10-31; older than #39
+
+### K6 · A periodic basis gives `NaN` derivatives to a `ForwardDiff.Dual` at `a` and at `b`
+
+- **location:** `src/bspline.jl`, `_reduce_argument(b::PeriodicBSplineBasis, x)`
+- **evidence:** the argument is reduced as `a + mod(x - a, L)`, and ForwardDiff's `mod` gives a
+  `NaN` partial where `x - a` is a multiple of `L`: `mod(Dual{Nothing}(1.0, 1.0), 1.0)` is
+  `Dual{Nothing}(0.0,NaN)`. With `b = BSplineBasis(UniformMesh(8, 0.0 .. 1.0), 3, Periodic())`
+  and `û = collect(1.0:8)` on `cb82e6f`, `evaluate(b, û, Dual{Nothing}(1.0, 1.0))` and
+  `evaluate(b, û, Dual{Nothing}(0.0, 1.0))` both give `Dual{Nothing}(6.999999999999999,NaN)`,
+  while `Dual{Nothing}(prevfloat(1.0), 1.0)` gives `Dual{Nothing}(7.0,8.000000000000014)`.
+  `evaluate_all(b, Dual{Nothing}(1.0, 1.0))` gives `NaN` partials in all four entries. The values
+  are right; only the derivatives are lost.
+- **kind:** defect
+- **found:** 2026-11-02
+
+### K7 · `l2_projection!` into a `Float32` array fails on a `Float64` periodic quadrature
+
+- **location:** `src/tensorproduct.jl`, `l2_projection!`, and the FFT solve of `CirculantMass`
+- **evidence:** with `B = BSplineBasis(UniformMesh(8, 0.0 .. 1.0), 3, Periodic()) ⊗
+  BSplineBasis(UniformMesh(8, -1.0 .. 2.0), 3)` and `q = TensorProductQuadrature(B)`,
+  `l2_projection!(zeros(Float32, size(B)...), q, ones(quadrature_grid_size(q)...))` raises
+  `MethodError: no method matching mul!(::Vector{ComplexF64}, ::FFTW.rFFTWPlan{Float64, -1,
+  false, 1, Tuple{Int64}}, ::Vector{Float32}, ::Bool, …`, on `cb82e6f` and on the branch that
+  adds caller-held workspaces alike: the `Float64` plan of the periodic factor does not take a
+  `Float32` vector.
+- **kind:** defect
+- **found:** 2026-11-02; older than `cb82e6f`
+
+### K9 · `evaluate!` on a `TensorProductBasis` takes buffers of one type only
+
+- **location:** `src/tensorproduct.jl`, `evaluate!(bufs, B::TensorProductBasis, û, x, d)`
+- **evidence:** the method takes `bufs` as an `NTuple{D, <:AbstractVector}`, so a tuple
+  of a `Vector` and a `SubArray`, or of vectors of different element types, raises a
+  `MethodError`. `evaluate_all!(bufs, B, x, d)`, which it calls, takes `bufs` as the same
+  type, as on `cb82e6f`, and refuses the same tuples.
+- **kind:** found late
+- **found:** 2026-11-02
