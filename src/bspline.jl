@@ -992,16 +992,18 @@ end
 # `L` -- ForwardDiff returns NaN there -- and that NaN reaches every basis function at the
 # knot `a` and its periodic images. The identity on [a,a+L) is also the fast path: a point
 # of a particle loop is usually inside already, and two comparisons cost less than `fld`.
+# It returns `x - zero(L)`, the same value in the type of the other returns, so that an
+# `Int` or a `Float32` point on a `Float64` basis infers one type.
 #
 # Within a few ulps of a seam, rounding can leave `x - L * fld(x - a, L)` just below `a` or
-# at `a + L`. The last two lines bring it back onto [a,a+L): outside it `evaluate` and
+# at `a + L`. The two lines after it bring it back onto [a,a+L): outside it `evaluate` and
 # `findcell` pick different spans, and the `p`-th derivatives of `evaluate` and
 # `evaluate_all` then disagree by the jump at the seam.
 _reduce_argument(::BSplineBasis, x) = x
 function _reduce_argument(b::PeriodicBSplineBasis, x)
     a = leftendpoint(domain(b))
     L = domainlength(b)
-    a ≤ x < a + L && return x
+    a ≤ x < a + L && return x - zero(L)
     x̃ = x - L * fld(x - a, L)
     x̃ < a && return x̃ + L
     x̃ ≥ a + L && return x̃ - L
