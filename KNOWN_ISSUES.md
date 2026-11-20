@@ -15,21 +15,6 @@
 
 ## This package
 
-### K2 · `evaluate` on a degree-0 periodic basis counts two functions just below `b`
-
-- **location:** `src/bspline.jl:616`
-- **evidence:** `evaluate` sums the images `x̃ - L`, `x̃` and `x̃ + L`, and `x̃ - L` can round
-  onto `a`, so the first basis function is counted beside the last one.
-  `B = PeriodicBSplineBasis(UniformMesh(14, -2.210389847221002 .. -1.67460502203573), 0)`
-  gives `sum(B[prevfloat(b), :]) == 2.0`, nonzero at `j = 1` and `j = 14`, while
-  `evaluate_all(B, prevfloat(b))` gives `(14, [1.0])`. Over 690 random degree-0 spans, 40
-  `Float64` and 19 `Float32` bases fail this way at `prevfloat(b)`. Degree 1 and higher are
-  continuous across the seam, so the same rounding there moves a value by rounding only. Setting
-  the knot `y₁ + L` to `b` does not fix it: the shifted argument `a + L` then lands below that
-  knot, and 35 of the `Float32` bases count two functions at `a` instead.
-- **kind:** defect
-- **found:** 2026-10-31
-
 ### K3 · A domain whose length overflows gives infinite breakpoints, which `nodes` clamps out of sight
 
 - **location:** `src/mesh.jl`, `breakpoints(::UniformMesh)` and `_graded_breakpoints`
@@ -104,6 +89,10 @@
   `Float64` domain `(0.0, 1e-309)` at `3.7e-310` does the same, on `72a3e17` and on the branch
   that removes K6 alike. The de Boor step at `src/bspline.jl:932`,
   `temp = values[r] / (right + left)`, divides by a knot span of a few subnormal cell widths,
-  whose reciprocal already overflows, so `temp` and every value become `Inf`.
+  whose reciprocal already overflows, so `temp` and every value become `Inf`. Forming the
+  ratios `right / s` and `left / s` where the cell of `x` is subnormal gives the values of
+  `evaluate`, but in its cheapest form tried, a test of the cell width once per call, it makes
+  `evaluate_all!` about 5 % slower at degree 3 and for points outside the domain at degree 1
+  (`scripts/periodic_reduction.jl`, two rounds against `72a3e17`), so the fix stays open.
 - **kind:** defect
 - **found:** 2026-11-20; older than `72a3e17`

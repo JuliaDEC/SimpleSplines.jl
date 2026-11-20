@@ -159,6 +159,27 @@ include("helpers/meshes.jl")
                 all(v .≈ w)
             end
         end
+        # Just below b the image x̃ - L can round onto a, which adds the first basis function
+        # beside the last ones: at degree 0 a second value 1, at degree p a second p-th
+        # derivative. On random spans b - a is inexact. Outside the block of `evaluate_all`
+        # every function must be zero, and inside it the two must agree.
+        rng = Xoshiro(20261120)
+        bad = []
+        for T in (Float64, Float32), _ in 1:400
+
+            lo, hi = random_span(rng, T)
+            n, p = rand(rng, 6:16), rand(rng, 0:3)
+            b = PeriodicBSplineBasis(UniformMesh{T}(n, lo .. hi), p)
+            for x in (prevfloat(hi), prevfloat(hi, 2), lo, nextfloat(lo))
+                j₀, v = evaluate_all(b, x, p)
+                inblock = [basis_index(b, j₀ + t - 1) for t in eachindex(v)]
+                w = [evaluate(b, j, x, p) for j in eachindex(b)]
+                ok = all(w[inblock] .≈ v) &&
+                     all(iszero, w[setdiff(eachindex(b), inblock)])
+                ok || push!(bad, (T, lo, hi, n, p, x))
+            end
+        end
+        @test isempty(bad)
         # On 0.1 .. 1.1 the length rounds to 1.0. At x = -0.9 the reduced point is just below
         # a, and adding L to it rounds to a + L, which is outside [a,a+L).
         for (lo, hi) in ((0.1, 1.1), (0.3, 1.0), (1e-3, 2.5)), p in 1:3

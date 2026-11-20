@@ -521,7 +521,7 @@ struct PeriodicBSplineBasis{T, MT <: Mesh{T}} <: AbstractBSplineBasis{T}
 
         # Five periodic images of the breakpoints. The recursion for basis function j
         # reaches from knot 2n+j to knot 2n+j+p+1 ≤ 3n+p+1, and evaluation shifts the
-        # argument by ±L, so the two outer blocks are what keeps every index in range.
+        # argument by +L, so the two outer blocks are what keeps every index in range.
         knots = vcat(y .- 2L, y .- L, y, y .+ L, y .+ 2L)
 
         new{T, MT}(mesh, Int(p), knots, breaks, 2n)
@@ -637,15 +637,15 @@ function evaluate(b::PeriodicBSplineBasis{T}, j::Integer, x::Number,
     L = domainlength(b)
     R = _evaltype(T, typeof(x))
 
-    # Reduce onto [a,a+L) first, so that three images always suffice: a basis function is
-    # supported inside a window of width 2L before wrapping, and x̃ reaches it through the
-    # shifts 0 and +L. The shift -L is kept because it costs nothing and makes the sum the
-    # one written in the definition rather than a truncation of it that happens to be exact.
+    # Reduce onto [a,a+L) first, so that two images suffice: basis function j is supported
+    # on [y_j, y_j + (p+1) cells] ⊂ [a, a+2L), and x̃ reaches it through the shifts 0 and +L.
+    # The shift -L of the definition lies below a, outside every support, and is left out:
+    # just below b, x̃ - L can round onto a and add the first basis function beside the last.
     x̃ = _reduce_argument(b, x)
     k = b.offset + j
 
     v = zero(R)
-    for shift in (-L, zero(L), L)
+    for shift in (zero(L), L)
         v += _bspline(b.knots, k, b.p, x̃ + shift, Int(d), nothing)
     end
     return convert(_resulttype(T, typeof(x)), v)

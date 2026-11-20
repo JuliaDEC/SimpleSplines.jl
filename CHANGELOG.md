@@ -43,6 +43,12 @@ degrees 1 and 3, takes 28–32 % less time per point for points inside `[a, a + 
 18–24 % more for points of which seven in eight lie outside it, in two rounds against the
 base. `scripts/periodic_reduction.jl` measures both.
 
+Just below `b`, `evaluate` on a periodic basis counted the first basis function beside the
+last ones (known issue K2): it summed the images `x̃ - L`, `x̃` and `x̃ + L`, and `x̃ - L` can
+round onto `a`. At degree 0 that gave a second value 1, so the functions summed to 2; at
+degree `p` it added `Dᵖ φ₁(a)` to the `p`-th derivative. The image `x̃ - L` lies below every
+support, and `evaluate` now sums `x̃` and `x̃ + L` only.
+
 ## [0.4.0] — 2026-11-02
 
 ### Breaking Changes
