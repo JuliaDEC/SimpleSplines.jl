@@ -166,10 +166,9 @@ _rawtype(L::Number) = typeof(L)
 
 # An integer domain is promoted, because the breakpoints of a subdivision of it are not
 # integers -- `UniformMesh(4, 0 .. 1)` would otherwise try to store 0.25 in an `Int` and throw
-# an `InexactError` from inside `breakpoints`, a long way from the constructor that chose the
-# type. Rational and extended-precision types are left alone: they are closed under the
-# division `breakpoints` performs, and narrowing them to `Float64` would silently discard the
-# exactness that is the reason for using them.
+# an `InexactError`. Rational and extended-precision types are left alone: they are closed
+# under the division `breakpoints` performs, and narrowing them to `Float64` would silently
+# discard the exactness that is the reason for using them.
 _domaintype(d) = _floattype(_rawtype(d))
 _floattype(::Type{T}) where {T <: Integer} = float(T)
 _floattype(::Type{T}) where {T} = T

@@ -86,9 +86,10 @@
 
 ### K11 · A `Float16` `UniformMesh` refuses ordinary domains, because its closed form overflows
 
-- **location:** `src/mesh.jl`, `breakpoints(::UniformMesh)`
-- **evidence:** `breakpoints` computes `a + (b - a) * (i - 1) / n`, and in `Float16` the product
-  `(b - a) * (i - 1)` exceeds `floatmax(Float16) = 65504` on ordinary meshes.
+- **location:** `src/mesh.jl`, `_uniform_breakpoint`, which `breakpoints(::UniformMesh)` and the
+  `UniformMesh` constructor share
+- **evidence:** `_uniform_breakpoint` computes `a + (b - a) * (i - 1) / n`, and in `Float16` the
+  product `(b - a) * (i - 1)` exceeds `floatmax(Float16) = 65504` on ordinary meshes.
   `UniformMesh{Float16}(100, 0 .. 1000)` throws "ArgumentError: the breakpoints of 100 cells on
   [0.0, 1.0e3] overflow at this precision"; on `72a3e17` its breakpoints were `Inf`.
   `UniformMesh{Float16}(10, 0 .. 1000)` builds, and `GradedMesh{Float16}` and
