@@ -218,6 +218,28 @@ include("helpers/meshes.jl")
                 all(v .≈ w)
             end
         end
+        # A point of [a,a+L) is not enough far out: it must be the periodic image of x. With
+        # a = 0 the remainder of `mod` is exact at any distance, so `evaluate_all` at x must
+        # equal it at `mod(x, L)`. A rounded pass loses the image (Float32 on [0, 3] at 2^50
+        # gave 2 for 1).
+        for (lo, hi, es) in ((0.0f0, 3.0f0, 9:2:37), (0.0, 2π, 17:7:302))
+            b = PeriodicBSplineBasis(UniformMesh(8, (lo, hi)), 3)
+            T, L = typeof(lo), domainlength(b)
+            xs = [T(2^50);
+                  [T(s * m * 10.0^e) for e in es
+                   for m in (1, 3.7, 5.565039, 6.4945377920735) for s in (-1, 1)]]
+            @test all(xs) do x
+                j₀, v = evaluate_all(b, x)
+                k₀, w = evaluate_all(b, mod(x, L))
+                j₀ == k₀ && all(v .≈ w)
+            end
+        end
+        # A Rational point is reduced by `mod`, exactly; the product of a pass overflows its
+        # integers near typemax.
+        b = PeriodicBSplineBasis(UniformMesh(8, (0 // 1, 3 // 1)), 1)
+        for x in (-typemax(Int) // 1, typemax(Int) // 1, -7 // 3)
+            @test evaluate_all(b, x) == evaluate_all(b, mod(x, 3 // 1))
+        end
         # On a domain of subnormal length the quotient overflows already at |x| of order 1.
         # `evaluate_all` returns Inf on such a domain (KNOWN_ISSUES K10), so the check is the
         # partition of unity of `evaluate`, which a point left outside [a,a+L) would break.

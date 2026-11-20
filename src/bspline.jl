@@ -1006,17 +1006,21 @@ end
 # dual number.
 #
 # Where `|x - a| / L` exceeds about `1 / eps`, the quotient `fld(x - a, L)` is itself rounded
-# and misses by whole periods, so one pass leaves the point outside. Each pass shrinks the
-# distance by about a factor `eps`, and the loop repeats it until the point is inside. Where
-# `|x - a| / L` exceeds `floatmax`, the quotient overflows (in Float16 from about 4e4 at
-# L = 0.6), and the pass steps by `P = L * 2^k` instead, an exact multiple of `L`, with `k`
-# grown by half the exponent range until the quotient is finite. The quotient then stays
-# above about `sqrt(floatmax)`, so each pass makes progress, also for a subnormal `L`. This
-# loop takes the quotient with `div`, not `fld`: the float `fld(d, P)` forms `d - mod(d, P)`,
-# which overflows near `-floatmax` (`fld(-floatmax, 2.3e306)` is `-Inf`, not -78), while
-# `div` forms `d - rem(d, P)`, which cannot exceed `|d|`; the guards and the next pass take
-# up the sign of the remainder. A NaN point stays NaN, and an infinite one becomes NaN, as
-# with `mod`.
+# and misses by whole periods, so one pass leaves the point outside, and the rounding of its
+# result, many periods wide, loses the periodic image. The far path therefore first takes the
+# remainder of `x` by `L` exactly, by long division: for `P = L * 2^k`, from the largest `k`
+# with `P ≤ |x|` down to `k = 0`, it moves `x` towards zero by `P` wherever `|x| ≥ P`. Each step
+# has `P ≤ |x| < 2P`, so its subtraction is exact (Sterbenz), also for a subnormal `L`, and it
+# has derivative one. The remainder lies in (-L, L), as that of `rem`, and with `a = 0` the
+# result is `mod(x, L)`. The passes after it bring it onto [a,a+L); on a domain of positive
+# width `|a| / L` is below about `2^53`, so their quotient stays finite. They take it with
+# `div`, not `fld`: the float `fld(d, L)` forms `d - mod(d, L)`, which can overflow near
+# `-floatmax` (`fld(-floatmax, 2.3e306)` is `-Inf`, not -78), while `div` forms
+# `d - rem(d, L)`, which cannot exceed `|d|`; the guards and the next pass take up the sign of
+# the remainder. A NaN point stays NaN, and an infinite one becomes NaN, as with `mod`.
+#
+# A `Rational` point is reduced by `mod`, which is exact for it and has no derivative to keep;
+# the product in the pass could overflow its integers.
 #
 # The loop is in its own function, which a point reaches only when one pass leaves it
 # outside, so that the fast path and the one pass stay small enough to inline.
@@ -1026,15 +1030,15 @@ function _reduce_argument(b::PeriodicBSplineBasis, x)
     L = domainlength(b)
     x̃ = x - zero(L)
     a ≤ x̃ < a + L && return x̃
-    r = _reduce_pass(fld, a, L, L, x̃)
+    x̃ isa Rational && return a + mod(x̃ - a, L)
+    r = _reduce_pass(fld, a, L, x̃)
     a ≤ r < a + L && return r
     return _reduce_far(a, L, x̃)
 end
 
-# One pass: subtract the whole steps `P`, a multiple of `L`, by the quotient `quot`, then
-# correct a seam rounding.
-function _reduce_pass(quot, a, L, P, x̃)
-    x̃ = fma(-P, quot(x̃ - a, P), x̃)
+# One pass: subtract the whole periods by the quotient `quot`, then correct a seam rounding.
+function _reduce_pass(quot, a, L, x̃)
+    x̃ = fma(-L, quot(x̃ - a, L), x̃)
     x̃ < a && (x̃ += L)
     x̃ < a + L && return x̃
     y = x̃ - L
@@ -1042,12 +1046,22 @@ function _reduce_pass(quot, a, L, P, x̃)
 end
 
 @noinline function _reduce_far(a, L, x̃)
-    while !(a ≤ x̃ < a + L || isnan(x̃))
-        P = L
-        while isinf(div(x̃ - a, P))
-            P = ldexp(P, exponent(floatmax(P)) ÷ 2)
+    if isfinite(x̃)
+        P, k = L, 0
+        while 2P ≤ abs(x̃)
+            P, k = 2P, k + 1
         end
-        x̃ = _reduce_pass(div, a, L, P, x̃)
+        for _ in 0:k
+            if x̃ ≥ P
+                x̃ -= P
+            elseif x̃ ≤ -P
+                x̃ += P
+            end
+            P /= 2
+        end
+    end
+    while !(a ≤ x̃ < a + L || isnan(x̃))
+        x̃ = _reduce_pass(div, a, L, x̃)
     end
     return x̃
 end

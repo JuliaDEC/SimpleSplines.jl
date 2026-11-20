@@ -2,15 +2,15 @@
 # it costs `evaluate_all!`. The figures in the changelog entry on the reduction are read off
 # this script.
 #
-# The bound compares the package's `_reduce_argument` with `a + mod(x - a, L)`, the reduction
-# that it replaced, over 10^6 points with |x| up to about 630 on a domain of length 2π, for six
-# values of `a`. Pairs on opposite sides of a seam differ by about `L` and are counted apart.
+# The bound compares the package's `_reduce_argument` with `a + mod(x - a, L)` over 10^6
+# points with |x| up to about 630 on a domain of length 2π, for six values of `a`. Pairs on
+# opposite sides of a seam differ by about `L` and are counted apart.
 #
-# The timing is of the package as loaded, so the comparison with the old reduction runs this
-# same file against a checkout of the base commit, each in its own process:
+# The timing is of the package as loaded, so a comparison of two versions runs this same file
+# against a checkout of each, each in its own process:
 #
 #   julia --startup-file=no --project=. scripts/periodic_reduction.jl
-#   julia --startup-file=no --project=<checkout of the base> scripts/periodic_reduction.jl
+#   julia --startup-file=no --project=<the other checkout> scripts/periodic_reduction.jl
 #
 # Each figure is the median over REPEATS passes of 10^6 points, in ns per point.
 

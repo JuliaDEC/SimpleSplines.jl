@@ -29,9 +29,14 @@ of `L`, so every basis function lost its derivative there; the values were right
 is now the identity on `[a, a + L)`, and elsewhere subtracts a whole number of periods in one
 rounding, `fma(-L, fld(x - a, L), x)`, and then moves a result that rounds to just below `a` or
 to `a + L` back onto `[a, a + L)`. Where `|x - a| / L` exceeds about `1 / eps`, the quotient
-is itself rounded, and the pass repeats until the point is inside; where it exceeds
-`floatmax`, also on a domain of subnormal length, a pass steps by a multiple `L * 2^k` with a
-finite quotient instead. It has derivative one everywhere. Outside
+is itself rounded and one pass misses by whole periods, so the reduction first takes the
+remainder of `x` by `L` exactly, by long division: it subtracts `L * 2^k` for decreasing `k`,
+each subtraction exact by Sterbenz's lemma, with derivative one. Far from the domain the
+reduced point is then the periodic image of `x`: with `a = 0` it equals `mod(x, L)` at any
+distance (checked for `Float64` on `[0, 2π]` and `Float32` on `[0, 3]` up to `floatmax`).
+Passes then bring the remainder onto `[a, a + L)`. The reduction has derivative one
+everywhere. A point on a basis with `Rational` breakpoints is reduced by `mod`, exactly, as a
+pass's product could overflow `Int` near `typemax`. Outside
 `[a, a + L)` the reduced argument can differ from the old one by rounding, by at most
 `4.6e-14` over `10^6` points with `|x|` up to about 630 on a domain of length `2π`, for each
 of six values of `a`; within a few ulps of a seam the two can also land on opposite sides of
@@ -41,7 +46,7 @@ one stays in `[a, a + L)`, also where a shift by `L` rounds onto `a + L`, and th
 `NaN` and `±Inf` still reduce to `NaN`. `evaluate_all!` on a 64-cell uniform basis, at
 degrees 1 and 3, takes 28–32 % less time per point for points inside `[a, a + L)`, and
 18–24 % more for points of which seven in eight lie outside it, in two rounds against the
-base. `scripts/periodic_reduction.jl` measures both.
+base, commit `72a3e17`. `scripts/periodic_reduction.jl` measures both.
 
 Just below `b`, `evaluate` on a periodic basis counted the first basis function beside the
 last ones (known issue K2): it summed the images `x̃ - L`, `x̃` and `x̃ + L`, and `x̃ - L` can
