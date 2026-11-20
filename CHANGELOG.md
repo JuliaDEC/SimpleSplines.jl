@@ -19,7 +19,9 @@ breakpoints:
   values. A `GeneralMesh` such as `GeneralMesh([-1e308, 0.0, 1e308])` kept finite breakpoints, but
   its `domainlength` was `Inf`, and a periodic basis on it evaluated to `NaN`.
 - A `UniformMesh` whose closed form `a + (b - a) * (i - 1) / n` overflows although `b - a` is
-  finite, such as `UniformMesh(4, -1e308 .. 0.7e308)`.
+  finite, such as `UniformMesh(4, -1e308 .. 0.7e308)`. In `Float16` this case already occurs on
+  ordinary domains, such as `UniformMesh{Float16}(100, 0 .. 1000)`, whose breakpoints were `Inf`
+  in 0.4.0 (known issue K11).
 - A domain too narrow for `n` cells in the precision of a `UniformMesh`, `GradedMesh` or
   `RandomMesh`, such as
   `UniformMesh(8, 1.0 .. nextfloat(1.0, 3))` (known issue K4). In 0.4.0 some breakpoints rounded

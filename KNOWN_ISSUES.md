@@ -83,3 +83,17 @@
   type, as on `cb82e6f`, and refuses the same tuples.
 - **kind:** found late
 - **found:** 2026-11-02
+
+### K11 · A `Float16` `UniformMesh` refuses ordinary domains, because its closed form overflows
+
+- **location:** `src/mesh.jl`, `breakpoints(::UniformMesh)`
+- **evidence:** `breakpoints` computes `a + (b - a) * (i - 1) / n`, and in `Float16` the product
+  `(b - a) * (i - 1)` exceeds `floatmax(Float16) = 65504` on ordinary meshes.
+  `UniformMesh{Float16}(100, 0 .. 1000)` throws "ArgumentError: the breakpoints of 100 cells on
+  [0.0, 1.0e3] overflow at this precision"; on `72a3e17` its breakpoints were `Inf`.
+  `UniformMesh{Float16}(10, 0 .. 1000)` builds, and `GradedMesh{Float16}` and
+  `RandomMesh{Float16}` on `0 .. 1000` with 100 cells give finite breakpoints. The form
+  `(b - a) * ((i - 1) / n)` avoids the overflow, but it changes the rounding of every `Float64`
+  uniform mesh, and with it `==`, `hash` and the circulant path.
+- **kind:** defect
+- **found:** 2026-11-20; older than `72a3e17`
