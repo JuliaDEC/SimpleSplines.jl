@@ -25,11 +25,17 @@ A periodic basis gave `NaN` derivatives to a `ForwardDiff.Dual` argument at the 
 `a` and at every point `a + kL` a whole number of periods from it, `b` included (known issue
 K6). `evaluate`, `evaluate_all` and `Spline` evaluation reduced the argument as
 `a + mod(x - a, L)`, and ForwardDiff's derivative of `mod` is `NaN` where `x - a` is a multiple
-of `L`, so every basis function lost its derivative there; the values were right. The argument
-is now reduced as `x - L * fld(x - a, L)`, which subtracts a whole number of periods and has
-derivative one everywhere. On `[a, a + L)` the reduced argument is `x` itself; elsewhere it can
-differ from the old one by rounding, by at most `1e-14` over `10^6` points with `|x|` up to about
-100 on a domain of length `2π`. The cost of the reduction is unchanged within measurement.
+of `L`, so every basis function lost its derivative there; the values were right. The reduction
+is now the identity on `[a, a + L)`, and elsewhere subtracts a whole number of periods,
+`x - L * fld(x - a, L)`, and then moves a result that rounds to just below `a` or to `a + L`
+back onto `[a, a + L)`. It has derivative one everywhere. Outside `[a, a + L)` the reduced
+argument can differ from the old one by rounding, by at most `1.1e-13` over `10^6` points with
+`|x|` up to about 630 on a domain of length `2π`, for six values of `a`; within a few ulps of a
+seam the two can also land on opposite sides of it, a whole period apart. The old reduction
+could return `a + L` there, and the `p`-th derivatives of `evaluate` and `evaluate_all` then
+disagreed by the jump at the seam; the new one stays in `[a, a + L)`, and the two agree. `evaluate_all!` on a 64-cell uniform
+basis, at degrees 1 and 3, takes 20–26 % less time per point for points inside `[a, a + L)`,
+and about 16 % more for points of which seven in eight lie outside it.
 
 ## [0.4.0] — 2026-11-02
 

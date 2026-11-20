@@ -986,15 +986,26 @@ end
 # clamping here would be wrong -- a point outside the domain must evaluate to zero, which
 # `findcell` plus the half-open knot spans already gives.
 #
-# The reduction subtracts a whole number of periods from `x`, so that it is the identity on
-# [a,a+L) and has derivative one everywhere. `a + mod(x - a, L)` agrees with it up to
+# The reduction is the identity on [a,a+L) and elsewhere subtracts a whole number of periods
+# from `x`, so that it has derivative one everywhere. `a + mod(x - a, L)` agrees with it up to
 # rounding, but an automatic derivative of `mod` is undefined where `x - a` is a multiple of
 # `L` -- ForwardDiff returns NaN there -- and that NaN reaches every basis function at the
-# knot `a` and its periodic images.
+# knot `a` and its periodic images. The identity on [a,a+L) is also the fast path: a point
+# of a particle loop is usually inside already, and two comparisons cost less than `fld`.
+#
+# Within a few ulps of a seam, rounding can leave `x - L * fld(x - a, L)` just below `a` or
+# at `a + L`. The last two lines bring it back onto [a,a+L): outside it `evaluate` and
+# `findcell` pick different spans, and the `p`-th derivatives of `evaluate` and
+# `evaluate_all` then disagree by the jump at the seam.
 _reduce_argument(::BSplineBasis, x) = x
 function _reduce_argument(b::PeriodicBSplineBasis, x)
+    a = leftendpoint(domain(b))
     L = domainlength(b)
-    x - L * fld(x - leftendpoint(domain(b)), L)
+    a ≤ x < a + L && return x
+    x̃ = x - L * fld(x - a, L)
+    x̃ < a && return x̃ + L
+    x̃ ≥ a + L && return x̃ - L
+    return x̃
 end
 
 # Whether a point carries any of the basis at all. A periodic basis reduces its argument, so

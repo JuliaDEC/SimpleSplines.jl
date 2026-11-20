@@ -119,8 +119,9 @@ include("helpers/meshes.jl")
     @testset "$(rpad("automatic derivative at the seam and its periodic images",76))" begin
         # A dual number at the left endpoint, or at a whole number of periods from it, must
         # carry the derivative of the basis there, not NaN. The derivative recursion gives the
-        # expected value; at the seam a + kL it is the right derivative, as the half-open
-        # knot spans make every derivative right-continuous.
+        # expected value. At order p the derivative jumps at the seam, and a + kL may round to
+        # either side of it; both sides of each test reduce the same x, so they take the same
+        # one-sided derivative.
         D(f, x) = ForwardDiff.derivative(f, x)
         for p in 1:4, M in (UniformMesh, GradedMesh, RandomMesh), a in (0.0, -0.3)
             b = PeriodicBSplineBasis(M(8, (a, a + 2π)), p)
@@ -134,14 +135,29 @@ include("helpers/meshes.jl")
                 @test D(t -> evaluate_all(b, t, d)[2], x) ≈ v′ rtol=1e-12 atol=1e-12
             end
         end
-        # the reported case: degree 4 at the knot x = 0 against a central difference, whose
-        # truncation error h²|φ'''|/6 is about 1e-11 here and its rounding error eps/h 2e-10
+        # degree 4 at the knot x = 0 against a central difference, whose truncation error
+        # h²|φ'''|/6 is about 1e-11 here and its rounding error eps/h 2e-10
         b = PeriodicBSplineBasis(UniformMesh(8, 2π), 4)
         h = 1e-6
         for x in (0.0, 2π), j in eachindex(b)
 
             fd = (evaluate(b, j, x + h) - evaluate(b, j, x - h)) / 2h
             @test D(t -> evaluate(b, j, t), x) ≈ fd atol = 1e-8
+        end
+        # A few ulps from a seam, x - L * fld(x - a, L) can round to just below a or to a + L.
+        # Unless the reduction brings it back onto [a,a+L), `evaluate` and `findcell` pick
+        # different spans there, and the p-th derivatives of `evaluate` and `evaluate_all`
+        # differ by the jump. This sweep reaches both sides for both values of a.
+        for p in 1:4, a in (0.0, -0.3)
+
+            b = PeriodicBSplineBasis(UniformMesh(8, (a, a + 2π)), p)
+            L = domainlength(b)
+            xs = [nextfloat(a + k * L, s) for k in -10:10 for s in -3:3]
+            @test all(xs) do x
+                j₀, v = evaluate_all(b, x, p)
+                w = [evaluate(b, basis_index(b, j₀ + t - 1), x, p) for t in eachindex(v)]
+                all(v .≈ w)
+            end
         end
     end
 
