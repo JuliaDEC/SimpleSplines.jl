@@ -38,8 +38,9 @@ rather than for use:
     the three families describes.
 
 Every constructor throws an `ArgumentError` for a domain whose length ``b - a`` overflows.
-The constructors of the three families also throw one for a domain too narrow to give `n+1`
-finite, strictly increasing breakpoints in the precision of the mesh.
+The constructors of the three families also throw one where the `n+1` breakpoints they compute
+are not finite and strictly increasing in the precision of the mesh: for a domain too narrow
+for `n` cells, and for a [`UniformMesh`](@ref) whose closed form overflows.
 """
 abstract type Mesh{T} end
 
@@ -143,7 +144,7 @@ function _check_breakpoints(y, a, b)
     n = length(y) - 1
     all(isfinite, y) || throw(ArgumentError(
         "the breakpoints of $(n) cells on [$(a), $(b)] overflow at this precision"))
-    all(>(0), diff(y)) || throw(ArgumentError(
+    all(i -> y[i] < y[i + 1], firstindex(y):(lastindex(y) - 1)) || throw(ArgumentError(
         "the domain [$(a), $(b)] is too narrow for $(n) cells at this precision: some " *
         "breakpoints round onto each other, which gives cells of zero width"))
 end
