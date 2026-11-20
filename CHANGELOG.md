@@ -33,9 +33,10 @@ argument can differ from the old one by rounding, by at most `1.1e-13` over `10^
 `|x|` up to about 630 on a domain of length `2π`, for six values of `a`; within a few ulps of a
 seam the two can also land on opposite sides of it, a whole period apart. The old reduction
 could return `a + L` there, and the `p`-th derivatives of `evaluate` and `evaluate_all` then
-disagreed by the jump at the seam; the new one stays in `[a, a + L)`, and the two agree. `evaluate_all!` on a 64-cell uniform
-basis, at degrees 1 and 3, takes 20–26 % less time per point for points inside `[a, a + L)`,
-and about 16 % more for points of which seven in eight lie outside it.
+disagreed by the jump at the seam; the new one stays in `[a, a + L)`, and the two agree.
+`evaluate_all!` on a 64-cell uniform basis, at degrees 1 and 3, takes 20–26 % less time per
+point for points inside `[a, a + L)`, and about 16 % more for points of which seven in eight
+lie outside it.
 
 ## [0.4.0] — 2026-11-02
 
