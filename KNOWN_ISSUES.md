@@ -15,31 +15,6 @@
 
 ## This package
 
-### K3 · A domain whose length overflows gives infinite breakpoints, which `nodes` clamps out of sight
-
-- **location:** `src/mesh.jl`, `breakpoints(::UniformMesh)` and `_graded_breakpoints`
-- **evidence:** `b - a` overflows, so every interior breakpoint is `Inf`, and no constructor
-  refuses the domain. `breakpoints(UniformMesh(4, -1e308 .. 1e308))` and
-  `breakpoints(GradedMesh(4, -1e308 .. 1e308))` both give `[-1.0e308, Inf, Inf, Inf, 1.0e308]`.
-  `nodes(BSplineBasis(UniformMesh(4, -1e308 .. 1e308), 2))` gives
-  `[-1.0e308, 1.0e308, 1.0e308, 1.0e308, 1.0e308, 1.0e308]`: the clamp of `nodes` to `[a, b]`
-  turns the overflowed Greville averages into finite, wrong nodes instead of an error. Computing the
-  averages in a difference form does not help, because the breakpoints are already infinite.
-- **kind:** defect
-- **found:** #39 (its review and CodeRabbit's merge-risk note); the clamp stays in #39
-  (user, 2026-10-31)
-
-### K4 · A span a few ulps wide gives repeated breakpoints, so some cells have zero width
-
-- **location:** `src/mesh.jl`, `breakpoints(::UniformMesh)`
-- **evidence:** no constructor refuses a span narrower than its cell count in ulps.
-  `breakpoints(UniformMesh(8, 1.0 .. nextfloat(1.0, 3)))` gives
-  `[1.0, 1.0, 1.0000000000000002, 1.0000000000000002, 1.0000000000000004, 1.0000000000000004,
-  1.0000000000000004, 1.0000000000000007, 1.0000000000000007]`, so `any(iszero, diff(...))` is
-  `true`, and a basis on that mesh has cells of zero width.
-- **kind:** defect
-- **found:** #39 (its review); older than #39
-
 ### K5 · `SplineQuadrature` refuses a `Float32` periodic basis on a narrow uniform mesh far from zero
 
 - **location:** `src/mass.jl`, the circulant check that raises `_not_circulant`
@@ -94,5 +69,20 @@
   `evaluate`, but in its cheapest form tried, a test of the cell width once per call, it makes
   `evaluate_all!` about 5 % slower at degree 3 and for points outside the domain at degree 1
   (`scripts/periodic_reduction.jl`, two rounds against `72a3e17`), so the fix stays open.
+- **kind:** defect
+- **found:** 2026-11-20; older than `72a3e17`
+
+### K11 · A `Float16` `UniformMesh` refuses ordinary domains, because its closed form overflows
+
+- **location:** `src/mesh.jl`, `_uniform_breakpoint`, which `breakpoints(::UniformMesh)` and the
+  `UniformMesh` constructor share
+- **evidence:** `_uniform_breakpoint` computes `a + (b - a) * (i - 1) / n`, and in `Float16` the
+  product `(b - a) * (i - 1)` exceeds `floatmax(Float16) = 65504` on ordinary meshes.
+  `UniformMesh{Float16}(100, 0 .. 1000)` throws "ArgumentError: the breakpoints of 100 cells on
+  [0.0, 1.0e3] overflow at this precision"; on `72a3e17` its breakpoints were `Inf`.
+  `UniformMesh{Float16}(10, 0 .. 1000)` builds, and `GradedMesh{Float16}` and
+  `RandomMesh{Float16}` on `0 .. 1000` with 100 cells give finite breakpoints. The form
+  `(b - a) * ((i - 1) / n)` avoids the overflow, but it changes the rounding of every `Float64`
+  uniform mesh, and with it `==`, `hash` and the circulant path.
 - **kind:** defect
 - **found:** 2026-11-20; older than `72a3e17`

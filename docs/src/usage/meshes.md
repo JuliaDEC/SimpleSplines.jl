@@ -70,7 +70,7 @@ rightendpoint(domain(UniformMesh(4, -10 .. 10)))
 
 An **integer** domain is promoted to a float, because the breakpoints of a subdivision of it
 are not integers — otherwise `UniformMesh(4, 0 .. 1)` would try to store `0.25` in an `Int`
-and throw an `InexactError` from a long way away. `Rational` and extended-precision types are
+and throw an `InexactError`. `Rational` and extended-precision types are
 left alone, since they are closed under the division `breakpoints` performs and narrowing them
 would discard the exactness that is the reason for using them.
 

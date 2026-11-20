@@ -7,6 +7,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Breaking Changes
+
+**The mesh constructors refuse a mesh whose length overflows, or whose breakpoints they cannot
+compute as finite and strictly increasing.** They throw an `ArgumentError` where 0.4.0 returned a
+mesh with an infinite length, or with infinite or repeated breakpoints:
+
+- A domain whose length `b - a` overflows, such as `-1e308 .. 1e308` (known issue K3), in all four
+  constructors. In 0.4.0 every interior breakpoint of a `UniformMesh`, `GradedMesh` or
+  `RandomMesh` on it was `Inf`, and `nodes` of a basis on the mesh clamped them to finite, wrong
+  values. A `GeneralMesh` such as `GeneralMesh([-1e308, 0.0, 1e308])` kept finite breakpoints, but
+  its `domainlength` was `Inf`, and a periodic basis on it evaluated to `NaN`.
+- A `UniformMesh` whose closed form `a + (b - a) * (i - 1) / n` overflows although `b - a` is
+  finite, such as `UniformMesh(4, -1e308 .. 0.7e308)`. In `Float16` this case already occurs on
+  ordinary domains, such as `UniformMesh{Float16}(100, 0 .. 1000)`, whose breakpoints were `Inf`
+  in 0.4.0 (known issue K11).
+- A domain too narrow for `n` cells in the precision of a `UniformMesh`, `GradedMesh` or
+  `RandomMesh`, such as
+  `UniformMesh(8, 1.0 .. nextfloat(1.0, 3))` (known issue K4). In 0.4.0 some breakpoints rounded
+  onto each other, which gave cells of zero width.
+
+A caller that builds such a mesh gets the error at the constructor; no valid mesh changes.
+
 ### Changed
 
 The CI Downgrade job resolves `Project.toml` and `test/Project.toml` together at their lower

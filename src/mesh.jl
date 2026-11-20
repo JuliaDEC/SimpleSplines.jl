@@ -36,6 +36,11 @@ rather than for use:
     must hold exactly on *any* mesh.
   - [`GeneralMesh`](@ref) — an explicit list of breakpoints, for a subdivision that none of
     the three families describes.
+
+Every constructor throws an `ArgumentError` for a domain whose length ``b - a`` overflows.
+The constructors of the three families also throw one where the `n+1` breakpoints they compute
+are not finite and strictly increasing in the precision of the mesh: for a domain too narrow
+for `n` cells, and for a [`UniformMesh`](@ref) whose closed form overflows.
 """
 abstract type Mesh{T} end
 
@@ -128,6 +133,24 @@ function _check_domain(a, b)
         "the domain must be finite, got [$(a), $(b)]"))
     b > a || throw(ArgumentError(
         "the domain must have positive width, got [$(a), $(b)]"))
+    isfinite(b - a) || throw(ArgumentError(
+        "the length b - a of the domain [$(a), $(b)] overflows to $(b - a)"))
+end
+
+# The computed breakpoints of a mesh family must be finite and strictly increasing. A span
+# narrower than its cell count in ulps rounds breakpoints onto each other, which gives cells of
+# zero width, and a closed form whose intermediate product overflows gives infinite ones. The
+# breakpoints are `y(i)` for `i` in `r`, so that a closed form is checked without a vector.
+function _check_breakpoints(y, r::AbstractUnitRange, a, b)
+    n = length(r) - 1
+    all(i -> isfinite(y(i)), r) || throw(ArgumentError(
+        "the breakpoints of $(n) cells on [$(a), $(b)] overflow at this precision"))
+    all(i -> y(i) < y(i + 1), first(r):(last(r) - 1)) || throw(ArgumentError(
+        "the domain [$(a), $(b)] is too narrow for $(n) cells at this precision: some " *
+        "breakpoints round onto each other, which gives cells of zero width"))
+end
+function _check_breakpoints(y::AbstractVector, a, b)
+    _check_breakpoints(i -> y[i], eachindex(y), a, b)
 end
 
 # The domain may be given as an interval, as a two-tuple, or as a single number standing for
@@ -143,10 +166,9 @@ _rawtype(L::Number) = typeof(L)
 
 # An integer domain is promoted, because the breakpoints of a subdivision of it are not
 # integers -- `UniformMesh(4, 0 .. 1)` would otherwise try to store 0.25 in an `Int` and throw
-# an `InexactError` from inside `breakpoints`, a long way from the constructor that chose the
-# type. Rational and extended-precision types are left alone: they are closed under the
-# division `breakpoints` performs, and narrowing them to `Float64` would silently discard the
-# exactness that is the reason for using them.
+# an `InexactError`. Rational and extended-precision types are left alone: they are closed
+# under the division `breakpoints` performs, and narrowing them to `Float64` would silently
+# discard the exactness that is the reason for using them.
 _domaintype(d) = _floattype(_rawtype(d))
 _floattype(::Type{T}) where {T <: Integer} = float(T)
 _floattype(::Type{T}) where {T} = T
@@ -192,20 +214,24 @@ struct UniformMesh{T} <: Mesh{T}
         a, b = convert(T, leftendpoint(d)), convert(T, rightendpoint(d))
         _check_ncells(n)
         _check_domain(a, b)
-        new{T}(n, a, b)
+        m = new{T}(n, a, b)
+        _check_breakpoints(i -> _uniform_breakpoint(m, i), 1:(m.n + 1), a, b)
+        return m
     end
 end
 
 UniformMesh(n::Integer, domain) = UniformMesh{_domaintype(domain)}(n, domain)
 UniformMesh(n::Integer) = UniformMesh(n, 2convert(Float64, π))
 
-function breakpoints(m::UniformMesh{T}) where {T}
-    y = T[m.a + (m.b - m.a) * (i - 1) / m.n for i in 1:(m.n + 1)]
-    # The ends are set rather than computed: a + (b - a) * n / n need not round back to b, and
-    # a knot vector that ends short of b gives a basis that vanishes there.
-    y[begin], y[end] = m.a, m.b
-    return y
+# The ends are set rather than computed: a + (b - a) * n / n need not round back to b, and a
+# knot vector that ends short of b gives a basis that vanishes there.
+function _uniform_breakpoint(m::UniformMesh{T}, i) where {T}
+    i == 1 && return m.a
+    i == m.n + 1 && return m.b
+    return convert(T, m.a + (m.b - m.a) * (i - 1) / m.n)
 end
+
+breakpoints(m::UniformMesh{T}) where {T} = T[_uniform_breakpoint(m, i) for i in 1:(m.n + 1)]
 
 meshwidth(m::UniformMesh) = (m.b - m.a) / m.n
 
@@ -251,7 +277,9 @@ struct GradedMesh{T} <: Mesh{T}
             "the grading amplitude must satisfy |a| < 1 for the map to stay increasing, " *
             "got amplitude = $(amplitude)"))
         α = convert(T, amplitude)
-        new{T}(n, a, b, α, _graded_breakpoints(T, n, a, b, α))
+        y = _graded_breakpoints(T, n, a, b, α)
+        _check_breakpoints(y, a, b)
+        new{T}(n, a, b, α, y)
     end
 end
 
@@ -303,7 +331,9 @@ struct RandomMesh{T} <: Mesh{T}
         spread ≥ 0 || throw(ArgumentError(
             "the width spread must be non-negative, got spread = $(spread)"))
         s, σ = convert(UInt, seed), convert(T, spread)
-        new{T}(n, a, b, s, σ, _random_breakpoints(T, n, a, b, s, σ))
+        y = _random_breakpoints(T, n, a, b, s, σ)
+        _check_breakpoints(y, a, b)
+        new{T}(n, a, b, s, σ, y)
     end
 end
 
@@ -379,6 +409,7 @@ struct GeneralMesh{T} <: Mesh{T}
         # the resulting basis would have the wrong dimension for its knot vector.
         all(>(0), diff(yy)) || throw(ArgumentError(
             "the breakpoints must be strictly increasing"))
+        _check_domain(yy[begin], yy[end])
         new{T}(yy)
     end
 end

@@ -93,6 +93,10 @@ include("helpers/meshes.jl")
         @test_throws ArgumentError GeneralMesh([0.0, 1.0, 1.0])      # repeated
         @test_throws ArgumentError GeneralMesh([0.0, 2.0, 1.0])      # not increasing
         @test_throws ArgumentError GeneralMesh([0.0, Inf])
+        # finite, increasing breakpoints, but b - a overflows
+        @test_throws r"^ArgumentError: the length b - a of the domain .* overflows" GeneralMesh([
+            -1e308, 0.0, 1e308])
+        @test domainlength(GeneralMesh([-0.5e308, 0.0, 0.5e308])) == 1e308
     end
 
     @testset "$(rpad("end breakpoints are exactly a and b",76))" begin
@@ -127,6 +131,31 @@ include("helpers/meshes.jl")
         @test_throws ArgumentError UniformMesh(4, 0 .. 0)
         @test_throws ArgumentError UniformMesh(4, 1 .. 0)
         @test_throws ArgumentError UniformMesh(4, 0 .. Inf)
+
+        for M in (UniformMesh, GradedMesh, RandomMesh)
+            # b - a overflows, so every interior breakpoint would be Inf; with one cell there
+            # is no interior breakpoint, but the domain length is still Inf
+            for n in (1, 4)
+                @test_throws r"^ArgumentError: the length b - a of the domain .* overflows" M(
+                    n, -1e308 .. 1e308)
+                @test_throws r"^ArgumentError: the length b - a of the domain .* overflows" M(
+                    n, -3.0f38 .. 3.0f38)
+            end
+            # a span narrower than its cell count in ulps repeats breakpoints
+            @test_throws r"^ArgumentError: the domain .* is too narrow for 8 cells" M(
+                8, 1.0 .. nextfloat(1.0, 3))
+            @test_throws r"^ArgumentError: the domain .* is too narrow for 4 cells" M(
+                4, 1.0f0 .. nextfloat(1.0f0, 2))
+            # the narrowest and the widest spans that still subdivide are accepted
+            for m in (M(3, 1.0 .. nextfloat(1.0, 3)), M(1, 1.0 .. nextfloat(1.0)),
+                M(2, -0.5e308 .. 0.5e308))
+                @test all(>(0), diff(breakpoints(m)))
+            end
+        end
+        # b - a is finite, but (b - a) * (i - 1) in the closed form of the uniform breakpoints
+        # overflows
+        @test_throws r"^ArgumentError: the breakpoints of 4 cells on .* overflow" UniformMesh(
+            4, -1e308 .. 0.7e308)
     end
 
     @testset "$(rpad("equality and hashing",76))" begin
