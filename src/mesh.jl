@@ -139,14 +139,18 @@ end
 
 # The computed breakpoints of a mesh family must be finite and strictly increasing. A span
 # narrower than its cell count in ulps rounds breakpoints onto each other, which gives cells of
-# zero width, and a closed form whose intermediate product overflows gives infinite ones.
-function _check_breakpoints(y, a, b)
-    n = length(y) - 1
-    all(isfinite, y) || throw(ArgumentError(
+# zero width, and a closed form whose intermediate product overflows gives infinite ones. The
+# breakpoints are `y(i)` for `i` in `r`, so that a closed form is checked without a vector.
+function _check_breakpoints(y, r::AbstractUnitRange, a, b)
+    n = length(r) - 1
+    all(i -> isfinite(y(i)), r) || throw(ArgumentError(
         "the breakpoints of $(n) cells on [$(a), $(b)] overflow at this precision"))
-    all(i -> y[i] < y[i + 1], firstindex(y):(lastindex(y) - 1)) || throw(ArgumentError(
+    all(i -> y(i) < y(i + 1), first(r):(last(r) - 1)) || throw(ArgumentError(
         "the domain [$(a), $(b)] is too narrow for $(n) cells at this precision: some " *
         "breakpoints round onto each other, which gives cells of zero width"))
+end
+function _check_breakpoints(y::AbstractVector, a, b)
+    _check_breakpoints(i -> y[i], eachindex(y), a, b)
 end
 
 # The domain may be given as an interval, as a two-tuple, or as a single number standing for
@@ -212,7 +216,7 @@ struct UniformMesh{T} <: Mesh{T}
         _check_ncells(n)
         _check_domain(a, b)
         m = new{T}(n, a, b)
-        _check_breakpoints(breakpoints(m), a, b)
+        _check_breakpoints(i -> _uniform_breakpoint(m, i), 1:(m.n + 1), a, b)
         return m
     end
 end
@@ -220,13 +224,15 @@ end
 UniformMesh(n::Integer, domain) = UniformMesh{_domaintype(domain)}(n, domain)
 UniformMesh(n::Integer) = UniformMesh(n, 2convert(Float64, π))
 
-function breakpoints(m::UniformMesh{T}) where {T}
-    y = T[m.a + (m.b - m.a) * (i - 1) / m.n for i in 1:(m.n + 1)]
-    # The ends are set rather than computed: a + (b - a) * n / n need not round back to b, and
-    # a knot vector that ends short of b gives a basis that vanishes there.
-    y[begin], y[end] = m.a, m.b
-    return y
+# The ends are set rather than computed: a + (b - a) * n / n need not round back to b, and a
+# knot vector that ends short of b gives a basis that vanishes there.
+function _uniform_breakpoint(m::UniformMesh{T}, i) where {T}
+    i == 1 && return m.a
+    i == m.n + 1 && return m.b
+    return convert(T, m.a + (m.b - m.a) * (i - 1) / m.n)
 end
+
+breakpoints(m::UniformMesh{T}) where {T} = T[_uniform_breakpoint(m, i) for i in 1:(m.n + 1)]
 
 meshwidth(m::UniformMesh) = (m.b - m.a) / m.n
 
