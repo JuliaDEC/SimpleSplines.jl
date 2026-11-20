@@ -19,6 +19,41 @@ on Julia 1.12:
 - `Aqua` 0.8 → 0.8.14: 0.8.13 and earlier read the `mt` field of `Core.TypeName`, which Julia
   1.12 does not have, so the piracy test errors.
 
+### Bug Fixes
+
+A periodic basis gave `NaN` derivatives to a `ForwardDiff.Dual` argument at the left endpoint
+`a` and at every point `a + kL` a whole number of periods from it, `b` included (known issue
+K6). `evaluate`, `evaluate_all` and `Spline` evaluation reduced the argument as
+`a + mod(x - a, L)`, and ForwardDiff's derivative of `mod` is `NaN` where `x - a` is a multiple
+of `L`, so every basis function lost its derivative there; the values were right. The reduction
+is now the identity on `[a, a + L)`, and elsewhere subtracts a whole number of periods in one
+rounding, `fma(-L, fld(x - a, L), x)`, and then moves a result that rounds to just below `a` or
+to `a + L` back onto `[a, a + L)`. Where `|x - a| / L` exceeds about `1 / eps`, the quotient
+is itself rounded and one pass misses by whole periods, so the reduction first takes the
+remainder of `x` by `L` exactly, by long division: it subtracts `L * 2^k` for decreasing `k`,
+each subtraction exact by Sterbenz's lemma, with derivative one. Far from the domain the
+reduced point is then the periodic image of `x`: with `a = 0` it equals `mod(x, L)` at any
+distance (checked for `Float64` on `[0, 2π]` and `Float32` on `[0, 3]` up to `floatmax`).
+Passes then bring the remainder onto `[a, a + L)`. The reduction has derivative one
+everywhere. A point on a basis with `Rational` breakpoints is reduced by `mod`, exactly, as a
+pass's product could overflow `Int` near `typemax`. Outside
+`[a, a + L)` the reduced argument can differ from the old one by rounding, by at most
+`4.6e-14` over `10^6` points with `|x|` up to about 630 on a domain of length `2π`, for each
+of six values of `a`; within a few ulps of a seam the two can also land on opposite sides of
+it, a whole period apart. The old reduction could return `a + L` there, and the `p`-th
+derivatives of `evaluate` and `evaluate_all` then disagreed by the jump at the seam; the new
+one stays in `[a, a + L)`, also where a shift by `L` rounds onto `a + L`, and the two agree.
+`NaN` and `±Inf` still reduce to `NaN`. `evaluate_all!` on a 64-cell uniform basis, at
+degrees 1 and 3, takes 28–32 % less time per point for points inside `[a, a + L)`, and
+18–24 % more for points of which seven in eight lie outside it, in two rounds against the
+base, commit `72a3e17`. `scripts/periodic_reduction.jl` measures both.
+
+Just below `b`, `evaluate` on a periodic basis counted the first basis function beside the
+last ones (known issue K2): it summed the images `x̃ - L`, `x̃` and `x̃ + L`, and `x̃ - L` can
+round onto `a`. At degree 0 that gave a second value 1, so the functions summed to 2; at
+degree `p` it added `Dᵖ φ₁(a)` to the `p`-th derivative. The image `x̃ - L` lies below every
+support, and `evaluate` now sums `x̃` and `x̃ + L` only.
+
 ## [0.4.0] — 2026-11-02
 
 ### Breaking Changes

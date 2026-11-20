@@ -519,9 +519,9 @@ struct PeriodicBSplineBasis{T, MT <: Mesh{T}} <: AbstractBSplineBasis{T}
         # periodic image of y_1 and not a breakpoint of its own.
         y = breaks[begin:(end - 1)]
 
-        # Five periodic images of the breakpoints. The recursion for basis function j
-        # reaches from knot 2n+j to knot 2n+j+p+1 ≤ 3n+p+1, and evaluation shifts the
-        # argument by ±L, so the two outer blocks are what keeps every index in range.
+        # Five periodic images of the breakpoints. Basis function j reads knots 2n+j to
+        # 2n+j+p+1, and `evaluate_all!` on cell c reads knots 2n+c-p to 2n+c+p+1. With
+        # p < n, every evaluation stays within knots n+2 to 4n, the middle three blocks.
         knots = vcat(y .- 2L, y .- L, y, y .+ L, y .+ 2L)
 
         new{T, MT}(mesh, Int(p), knots, breaks, 2n)
@@ -634,19 +634,18 @@ function evaluate(b::PeriodicBSplineBasis{T}, j::Integer, x::Number,
     @boundscheck (1 ≤ j ≤ nbasis(b)) || throw(BoundsError(b, j))
     d ≥ 0 || throw(ArgumentError("the derivative order must be non-negative, got d = $(d)"))
 
-    a = leftendpoint(domain(b))
     L = domainlength(b)
     R = _evaltype(T, typeof(x))
 
-    # Reduce onto [a,a+L) first, so that three images always suffice: a basis function is
-    # supported inside a window of width 2L before wrapping, and x̃ reaches it through the
-    # shifts 0 and +L. The shift -L is kept because it costs nothing and makes the sum the
-    # one written in the definition rather than a truncation of it that happens to be exact.
-    x̃ = a + mod(x - a, L)
+    # Reduce onto [a,a+L) first, so that two images suffice: basis function j is supported
+    # on [y_j, y_j + (p+1) cells] ⊂ [a, a+2L), and x̃ reaches it through the shifts 0 and +L.
+    # The shift -L of the definition lies below a, outside every support, and is left out:
+    # just below b, x̃ - L can round onto a and add the first basis function beside the last.
+    x̃ = _reduce_argument(b, x)
     k = b.offset + j
 
     v = zero(R)
-    for shift in (-L, zero(L), L)
+    for shift in (zero(L), L)
         v += _bspline(b.knots, k, b.p, x̃ + shift, Int(d), nothing)
     end
     return convert(_resulttype(T, typeof(x)), v)
@@ -986,10 +985,85 @@ end
 # A periodic basis accepts any real argument and reduces it; a bounded one does not, and
 # clamping here would be wrong -- a point outside the domain must evaluate to zero, which
 # `findcell` plus the half-open knot spans already gives.
+#
+# The reduction is the identity on [a,a+L) and elsewhere subtracts a whole number of periods
+# from `x`, so that it has derivative one everywhere. `a + mod(x - a, L)` agrees with it up to
+# rounding, but an automatic derivative of `mod` is undefined where `x - a` is a multiple of
+# `L` -- ForwardDiff returns NaN there -- and that NaN reaches every basis function at the
+# knot `a` and its periodic images. The identity on [a,a+L) is also the fast path: a point
+# of a particle loop is usually inside already, and two comparisons cost less than `fld`.
+# The point is `x - zero(L)` from the start, the same value in the type of the other
+# results, so that an `Int` or a `Float32` point on a `Float64` basis infers one type.
+#
+# The subtraction is one `fma`: far from the domain `L * fld(x - a, L)` need not be a float,
+# and a rounded product can lose the whole remainder (11184813 * 3 rounds to 33554440 in
+# Float32). Rounding of `x - a` can still leave the result just below `a` or at `a + L`, and
+# the lines after it bring it back onto [a,a+L): outside it `evaluate` and `findcell` pick
+# different spans, and the `p`-th derivatives of `evaluate` and `evaluate_all` then disagree
+# by the jump at the seam. A shift by `L` can itself round onto the float `a + L` (on 0.1 ..
+# 1.1 at x = -0.9). Rounding is monotone, so a point that a shift back by `L` takes below `a`
+# is exactly that float, and `prevfloat` moves it inside while it keeps the partials of a
+# dual number.
+#
+# Where `|x - a| / L` exceeds about `1 / eps`, the quotient `fld(x - a, L)` is itself rounded
+# and misses by whole periods, so one pass leaves the point outside, and the rounding of its
+# result, many periods wide, loses the periodic image. The far path therefore first takes the
+# remainder of `x` by `L` exactly, by long division: for `P = L * 2^k`, from the largest `k`
+# with `P ≤ |x|` down to `k = 0`, it moves `x` towards zero by `P` wherever `|x| ≥ P`. Each step
+# has `P ≤ |x| < 2P`, so its subtraction is exact (Sterbenz), also for a subnormal `L`, and it
+# has derivative one. The remainder lies in (-L, L), as that of `rem`, and with `a = 0` the
+# result is `mod(x, L)`. The passes after it bring it onto [a,a+L); on a domain of positive
+# width `|a| / L` is below about `2^53`, so their quotient stays finite. They take it with
+# `div`, not `fld`: the float `fld(d, L)` forms `d - mod(d, L)`, which can overflow near
+# `-floatmax` (`fld(-floatmax, 2.3e306)` is `-Inf`, not -78), while `div` forms
+# `d - rem(d, L)`, which cannot exceed `|d|`; the guards and the next pass take up the sign of
+# the remainder. A NaN point stays NaN, and an infinite one becomes NaN, as with `mod`.
+#
+# A `Rational` point is reduced by `mod`, which is exact for it and has no derivative to keep;
+# the product in the pass could overflow its integers.
+#
+# The loop is in its own function, which a point reaches only when one pass leaves it
+# outside, so that the fast path and the one pass stay small enough to inline.
 _reduce_argument(::BSplineBasis, x) = x
 function _reduce_argument(b::PeriodicBSplineBasis, x)
     a = leftendpoint(domain(b))
-    a + mod(x - a, domainlength(b))
+    L = domainlength(b)
+    x̃ = x - zero(L)
+    a ≤ x̃ < a + L && return x̃
+    x̃ isa Rational && return a + mod(x̃ - a, L)
+    r = _reduce_pass(fld, a, L, x̃)
+    a ≤ r < a + L && return r
+    return _reduce_far(a, L, x̃)
+end
+
+# One pass: subtract the whole periods by the quotient `quot`, then correct a seam rounding.
+function _reduce_pass(quot, a, L, x̃)
+    x̃ = fma(-L, quot(x̃ - a, L), x̃)
+    x̃ < a && (x̃ += L)
+    x̃ < a + L && return x̃
+    y = x̃ - L
+    return y < a ? prevfloat(x̃) : y
+end
+
+@noinline function _reduce_far(a, L, x̃)
+    if isfinite(x̃)
+        P, k = L, 0
+        while 2P ≤ abs(x̃)
+            P, k = 2P, k + 1
+        end
+        for _ in 0:k
+            if x̃ ≥ P
+                x̃ -= P
+            elseif x̃ ≤ -P
+                x̃ += P
+            end
+            P /= 2
+        end
+    end
+    while !(a ≤ x̃ < a + L || isnan(x̃))
+        x̃ = _reduce_pass(div, a, L, x̃)
+    end
+    return x̃
 end
 
 # Whether a point carries any of the basis at all. A periodic basis reduces its argument, so
