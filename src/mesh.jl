@@ -36,6 +36,10 @@ rather than for use:
     must hold exactly on *any* mesh.
   - [`GeneralMesh`](@ref) — an explicit list of breakpoints, for a subdivision that none of
     the three families describes.
+
+Every constructor throws an `ArgumentError` for a domain whose length ``b - a`` overflows.
+The constructors of the three families also throw one for a domain too narrow to give `n+1`
+finite, strictly increasing breakpoints in the precision of the mesh.
 """
 abstract type Mesh{T} end
 
@@ -128,6 +132,20 @@ function _check_domain(a, b)
         "the domain must be finite, got [$(a), $(b)]"))
     b > a || throw(ArgumentError(
         "the domain must have positive width, got [$(a), $(b)]"))
+    isfinite(b - a) || throw(ArgumentError(
+        "the length b - a of the domain [$(a), $(b)] overflows to $(b - a)"))
+end
+
+# The computed breakpoints of a mesh family must be finite and strictly increasing. A span
+# narrower than its cell count in ulps rounds breakpoints onto each other, which gives cells of
+# zero width, and a closed form whose intermediate product overflows gives infinite ones.
+function _check_breakpoints(y, a, b)
+    n = length(y) - 1
+    all(isfinite, y) || throw(ArgumentError(
+        "the breakpoints of $(n) cells on [$(a), $(b)] overflow at this precision"))
+    all(>(0), diff(y)) || throw(ArgumentError(
+        "the domain [$(a), $(b)] is too narrow for $(n) cells at this precision: some " *
+        "breakpoints round onto each other, which gives cells of zero width"))
 end
 
 # The domain may be given as an interval, as a two-tuple, or as a single number standing for
@@ -192,7 +210,9 @@ struct UniformMesh{T} <: Mesh{T}
         a, b = convert(T, leftendpoint(d)), convert(T, rightendpoint(d))
         _check_ncells(n)
         _check_domain(a, b)
-        new{T}(n, a, b)
+        m = new{T}(n, a, b)
+        _check_breakpoints(breakpoints(m), a, b)
+        return m
     end
 end
 
@@ -251,7 +271,9 @@ struct GradedMesh{T} <: Mesh{T}
             "the grading amplitude must satisfy |a| < 1 for the map to stay increasing, " *
             "got amplitude = $(amplitude)"))
         α = convert(T, amplitude)
-        new{T}(n, a, b, α, _graded_breakpoints(T, n, a, b, α))
+        y = _graded_breakpoints(T, n, a, b, α)
+        _check_breakpoints(y, a, b)
+        new{T}(n, a, b, α, y)
     end
 end
 
@@ -303,7 +325,9 @@ struct RandomMesh{T} <: Mesh{T}
         spread ≥ 0 || throw(ArgumentError(
             "the width spread must be non-negative, got spread = $(spread)"))
         s, σ = convert(UInt, seed), convert(T, spread)
-        new{T}(n, a, b, s, σ, _random_breakpoints(T, n, a, b, s, σ))
+        y = _random_breakpoints(T, n, a, b, s, σ)
+        _check_breakpoints(y, a, b)
+        new{T}(n, a, b, s, σ, y)
     end
 end
 
@@ -379,6 +403,7 @@ struct GeneralMesh{T} <: Mesh{T}
         # the resulting basis would have the wrong dimension for its knot vector.
         all(>(0), diff(yy)) || throw(ArgumentError(
             "the breakpoints must be strictly increasing"))
+        _check_domain(yy[begin], yy[end])
         new{T}(yy)
     end
 end

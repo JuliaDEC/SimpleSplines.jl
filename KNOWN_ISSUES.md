@@ -30,31 +30,6 @@
 - **kind:** defect
 - **found:** 2026-10-31
 
-### K3 · A domain whose length overflows gives infinite breakpoints, which `nodes` clamps out of sight
-
-- **location:** `src/mesh.jl`, `breakpoints(::UniformMesh)` and `_graded_breakpoints`
-- **evidence:** `b - a` overflows, so every interior breakpoint is `Inf`, and no constructor
-  refuses the domain. `breakpoints(UniformMesh(4, -1e308 .. 1e308))` and
-  `breakpoints(GradedMesh(4, -1e308 .. 1e308))` both give `[-1.0e308, Inf, Inf, Inf, 1.0e308]`.
-  `nodes(BSplineBasis(UniformMesh(4, -1e308 .. 1e308), 2))` gives
-  `[-1.0e308, 1.0e308, 1.0e308, 1.0e308, 1.0e308, 1.0e308]`: the clamp of `nodes` to `[a, b]`
-  turns the overflowed Greville averages into finite, wrong nodes instead of an error. Computing the
-  averages in a difference form does not help, because the breakpoints are already infinite.
-- **kind:** defect
-- **found:** #39 (its review and CodeRabbit's merge-risk note); the clamp stays in #39
-  (user, 2026-10-31)
-
-### K4 · A span a few ulps wide gives repeated breakpoints, so some cells have zero width
-
-- **location:** `src/mesh.jl`, `breakpoints(::UniformMesh)`
-- **evidence:** no constructor refuses a span narrower than its cell count in ulps.
-  `breakpoints(UniformMesh(8, 1.0 .. nextfloat(1.0, 3)))` gives
-  `[1.0, 1.0, 1.0000000000000002, 1.0000000000000002, 1.0000000000000004, 1.0000000000000004,
-  1.0000000000000004, 1.0000000000000007, 1.0000000000000007]`, so `any(iszero, diff(...))` is
-  `true`, and a basis on that mesh has cells of zero width.
-- **kind:** defect
-- **found:** #39 (its review); older than #39
-
 ### K5 · `SplineQuadrature` refuses a `Float32` periodic basis on a narrow uniform mesh far from zero
 
 - **location:** `src/mass.jl`, the circulant check that raises `_not_circulant`
