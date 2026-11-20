@@ -9,9 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking Changes
 
-**The mesh constructors refuse a domain that they cannot subdivide.** They throw an
-`ArgumentError` where 0.4.0 returned a mesh with an infinite length, or with infinite or repeated
-breakpoints:
+**The mesh constructors refuse a mesh whose length overflows, or whose breakpoints they cannot
+compute as finite and strictly increasing.** They throw an `ArgumentError` where 0.4.0 returned a
+mesh with an infinite length, or with infinite or repeated breakpoints:
 
 - A domain whose length `b - a` overflows, such as `-1e308 .. 1e308` (known issue K3), in all four
   constructors. In 0.4.0 every interior breakpoint of a `UniformMesh`, `GradedMesh` or
