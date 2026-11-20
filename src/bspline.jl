@@ -519,9 +519,9 @@ struct PeriodicBSplineBasis{T, MT <: Mesh{T}} <: AbstractBSplineBasis{T}
         # periodic image of y_1 and not a breakpoint of its own.
         y = breaks[begin:(end - 1)]
 
-        # Five periodic images of the breakpoints. The recursion for basis function j
-        # reaches from knot 2n+j to knot 2n+j+p+1 ≤ 3n+p+1, and evaluation shifts the
-        # argument by +L, so the two outer blocks are what keeps every index in range.
+        # Five periodic images of the breakpoints. Basis function j reads knots 2n+j to
+        # 2n+j+p+1, and `evaluate_all!` on cell c reads knots 2n+c-p to 2n+c+p+1. With
+        # p < n, every evaluation stays within knots n+2 to 4n, the middle three blocks.
         knots = vcat(y .- 2L, y .- L, y, y .+ L, y .+ 2L)
 
         new{T, MT}(mesh, Int(p), knots, breaks, 2n)
