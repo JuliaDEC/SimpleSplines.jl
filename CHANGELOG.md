@@ -19,6 +19,18 @@ on Julia 1.12:
 - `Aqua` 0.8 → 0.8.14: 0.8.13 and earlier read the `mt` field of `Core.TypeName`, which Julia
   1.12 does not have, so the piracy test errors.
 
+### Bug Fixes
+
+A periodic basis gave `NaN` derivatives to a `ForwardDiff.Dual` argument at the left endpoint
+`a` and at every point `a + kL` a whole number of periods from it, `b` included (known issue
+K6). `evaluate`, `evaluate_all` and `Spline` evaluation reduced the argument as
+`a + mod(x - a, L)`, and ForwardDiff's derivative of `mod` is `NaN` where `x - a` is a multiple
+of `L`, so every basis function lost its derivative there; the values were right. The argument
+is now reduced as `x - L * fld(x - a, L)`, which subtracts a whole number of periods and has
+derivative one everywhere. On `[a, a + L)` the reduced argument is `x` itself; elsewhere it can
+differ from the old one by rounding, by at most `1e-14` over `10^6` points with `|x|` up to about
+100 on a domain of length `2π`. The cost of the reduction is unchanged within measurement.
+
 ## [0.4.0] — 2026-11-02
 
 ### Breaking Changes

@@ -634,7 +634,6 @@ function evaluate(b::PeriodicBSplineBasis{T}, j::Integer, x::Number,
     @boundscheck (1 ≤ j ≤ nbasis(b)) || throw(BoundsError(b, j))
     d ≥ 0 || throw(ArgumentError("the derivative order must be non-negative, got d = $(d)"))
 
-    a = leftendpoint(domain(b))
     L = domainlength(b)
     R = _evaltype(T, typeof(x))
 
@@ -642,7 +641,7 @@ function evaluate(b::PeriodicBSplineBasis{T}, j::Integer, x::Number,
     # supported inside a window of width 2L before wrapping, and x̃ reaches it through the
     # shifts 0 and +L. The shift -L is kept because it costs nothing and makes the sum the
     # one written in the definition rather than a truncation of it that happens to be exact.
-    x̃ = a + mod(x - a, L)
+    x̃ = _reduce_argument(b, x)
     k = b.offset + j
 
     v = zero(R)
@@ -986,10 +985,16 @@ end
 # A periodic basis accepts any real argument and reduces it; a bounded one does not, and
 # clamping here would be wrong -- a point outside the domain must evaluate to zero, which
 # `findcell` plus the half-open knot spans already gives.
+#
+# The reduction subtracts a whole number of periods from `x`, so that it is the identity on
+# [a,a+L) and has derivative one everywhere. `a + mod(x - a, L)` agrees with it up to
+# rounding, but an automatic derivative of `mod` is undefined where `x - a` is a multiple of
+# `L` -- ForwardDiff returns NaN there -- and that NaN reaches every basis function at the
+# knot `a` and its periodic images.
 _reduce_argument(::BSplineBasis, x) = x
 function _reduce_argument(b::PeriodicBSplineBasis, x)
-    a = leftendpoint(domain(b))
-    a + mod(x - a, domainlength(b))
+    L = domainlength(b)
+    x - L * fld(x - leftendpoint(domain(b)), L)
 end
 
 # Whether a point carries any of the basis at all. A periodic basis reduces its argument, so

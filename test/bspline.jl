@@ -1,4 +1,5 @@
 using SimpleSplines
+using ForwardDiff
 using LinearAlgebra
 using Random
 using Test
@@ -112,6 +113,35 @@ include("helpers/meshes.jl")
                 fd = (evaluate(b, j, x + h, d) - evaluate(b, j, x - h, d)) / 2h
                 @test evaluate(b, j, x, d + 1) ≈ fd atol = 1e-6
             end
+        end
+    end
+
+    @testset "$(rpad("automatic derivative at the seam and its periodic images",76))" begin
+        # A dual number at the left endpoint, or at a whole number of periods from it, must
+        # carry the derivative of the basis there, not NaN. The derivative recursion gives the
+        # expected value; at the seam a + kL it is the right derivative, as the half-open
+        # knot spans make every derivative right-continuous.
+        D(f, x) = ForwardDiff.derivative(f, x)
+        for p in 1:4, M in (UniformMesh, GradedMesh, RandomMesh), a in (0.0, -0.3)
+            b = PeriodicBSplineBasis(M(8, (a, a + 2π)), p)
+            L = domainlength(b)
+            for x in (a, a + L, a - L, a + 3L), d in 0:(p - 1)
+
+                for j in eachindex(b)
+                    @test D(t -> evaluate(b, j, t, d), x) ≈ evaluate(b, j, x, d + 1) rtol=1e-12 atol=1e-12
+                end
+                _, v′ = evaluate_all(b, x, d + 1)
+                @test D(t -> evaluate_all(b, t, d)[2], x) ≈ v′ rtol=1e-12 atol=1e-12
+            end
+        end
+        # the reported case: degree 4 at the knot x = 0 against a central difference, whose
+        # truncation error h²|φ'''|/6 is about 1e-11 here and its rounding error eps/h 2e-10
+        b = PeriodicBSplineBasis(UniformMesh(8, 2π), 4)
+        h = 1e-6
+        for x in (0.0, 2π), j in eachindex(b)
+
+            fd = (evaluate(b, j, x + h) - evaluate(b, j, x - h)) / 2h
+            @test D(t -> evaluate(b, j, t), x) ≈ fd atol = 1e-8
         end
     end
 
