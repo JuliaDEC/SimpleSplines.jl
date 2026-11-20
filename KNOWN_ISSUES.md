@@ -94,3 +94,16 @@
   type, as on `cb82e6f`, and refuses the same tuples.
 - **kind:** found late
 - **found:** 2026-11-02
+
+### K10 · `evaluate_all` on a domain of subnormal length returns `Inf`
+
+- **location:** `src/bspline.jl:878`
+- **evidence:** with `b = PeriodicBSplineBasis(UniformMesh(8, (0.0f0, 1.0f-39)), 3)`,
+  `evaluate_all(b, 3.7f-40)` gives `Float32[Inf, Inf, Inf, Inf]`, while `evaluate(b, j, 3.7f-40)`
+  for the same four functions gives `[1.07f-5, 0.187, 0.665, 0.147]`, which sum to one. The
+  `Float64` domain `(0.0, 1e-309)` at `3.7e-310` does the same, on `72a3e17` and on the branch
+  that removes K6 alike. The de Boor step at `src/bspline.jl:932`,
+  `temp = values[r] / (right + left)`, divides by a knot span of a few subnormal cell widths,
+  whose reciprocal already overflows, so `temp` and every value become `Inf`.
+- **kind:** defect
+- **found:** 2026-11-20; older than `72a3e17`

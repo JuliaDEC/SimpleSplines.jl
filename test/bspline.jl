@@ -144,7 +144,7 @@ include("helpers/meshes.jl")
             fd = (evaluate(b, j, x + h) - evaluate(b, j, x - h)) / 2h
             @test D(t -> evaluate(b, j, t), x) ≈ fd atol = 1e-8
         end
-        # A few ulps from a seam, x - L * fld(x - a, L) can round to just below a or to a + L.
+        # A few ulps from a seam, the reduced point can round to just below a or to a + L.
         # Unless the reduction brings it back onto [a,a+L), `evaluate` and `findcell` pick
         # different spans there, and the p-th derivatives of `evaluate` and `evaluate_all`
         # differ by the jump. This sweep reaches both sides for both values of a.
@@ -158,6 +158,67 @@ include("helpers/meshes.jl")
                 w = [evaluate(b, basis_index(b, j₀ + t - 1), x, p) for t in eachindex(v)]
                 all(v .≈ w)
             end
+        end
+        # On 0.1 .. 1.1 the length rounds to 1.0. At x = -0.9 the reduced point is just below
+        # a, and adding L to it rounds to a + L, which is outside [a,a+L).
+        for (lo, hi) in ((0.1, 1.1), (0.3, 1.0), (1e-3, 2.5)), p in 1:3
+
+            b = PeriodicBSplineBasis(UniformMesh(8, (lo, hi)), p)
+            a, L = leftendpoint(domain(b)), domainlength(b)
+            xs = [-0.9; [nextfloat(a + k * L, s) for k in -10:10 for s in -3:3]]
+            @test all(xs) do x
+                j₀, v = evaluate_all(b, x, p)
+                w = [evaluate(b, basis_index(b, j₀ + t - 1), x, p) for t in eachindex(v)]
+                all(v .≈ w)
+            end
+        end
+        # Far out, L * fld(x - a, L) need not be a float, and a rounded product loses the
+        # remainder: 11184813 * 3 rounds to 33554440 in Float32. With a = 0 the remainder of
+        # `mod` is exact, so the reduced point must land in the cell of `mod(x, L)`.
+        b = PeriodicBSplineBasis(UniformMesh(8, (0.0f0, 3.0f0)), 0)
+        for x in Float32[33554440, -33554440, 16777219, 50000001, 1.2345678f8]
+            @test [evaluate(b, j, x) for j in eachindex(b)] ==
+                  [evaluate(b, j, mod(x, 3.0f0)) for j in eachindex(b)]
+        end
+        # Further out, fld(x - a, L) is itself rounded and misses by whole periods: in Float32
+        # beyond about 1e8 on a domain of length 3, in Float64 beyond about 1e16 on one of 2π.
+        # The reduced point must still lie in [a,a+L), where `evaluate` and `evaluate_all`
+        # agree, and a dual derivative must stay finite. On the two short domains the
+        # quotient (x - a) / L overflows above about 4.8e37 and 2e307.
+        for (lo, hi, es) in ((0.3f0, 3.3f0, 8:37), (0.1, 0.1 + 2π, 15:7:302),
+            (-0.2f0, -0.06f0, 30:37), (0.77, 0.88, 300:307))
+            b = PeriodicBSplineBasis(UniformMesh(8, (lo, hi)), 3)
+            T = typeof(lo)
+            xs = [T(s * m * 10.0^e) for e in es for m in (1, 3.7, 5.565039, 6.4945377920735)
+                  for s in (-1, 1)]
+            @test all(xs) do x
+                j₀, v = evaluate_all(b, x)
+                w = [evaluate(b, basis_index(b, j₀ + t - 1), x) for t in eachindex(v)]
+                all(v .≈ w)
+            end
+        end
+        # On a domain of subnormal length the quotient overflows already at |x| of order 1.
+        # `evaluate_all` returns Inf on such a domain (KNOWN_ISSUES K10), so the check is the
+        # partition of unity of `evaluate`, which a point left outside [a,a+L) would break.
+        for (lo, hi, es) in ((0.0f0, 1.0f-39, -1:37), (0.0, 1e-309, -1:7:307))
+            b = PeriodicBSplineBasis(UniformMesh(8, (lo, hi)), 3)
+            T = typeof(lo)
+            xs = [T(s * m * 10.0^e) for e in es for m in (1, 3.7, 5.565039, 6.4945377920735)
+                  for s in (-1, 1)]
+            @test all(x -> sum(j -> evaluate(b, j, x), eachindex(b)) ≈ 1, xs)
+        end
+        # Near -floatmax the float `fld` overflows internally on a long domain:
+        # fld(-floatmax, 2.3e306) is -Inf. The reduced point must still be finite and inside.
+        b = PeriodicBSplineBasis(UniformMesh(8, (0.0, 9.672930968417535e297)), 3)
+        for x in (-floatmax(Float64), floatmax(Float64), -floatmax(Float64) / 3)
+            j₀, v = evaluate_all(b, x)
+            w = [evaluate(b, basis_index(b, j₀ + t - 1), x) for t in eachindex(v)]
+            @test all(v .≈ w) && sum(v) ≈ 1
+        end
+        far = ((0.3f0, 3.3f0, -5.565039f8), (0.1, 0.1 + 2π, -6.49453779207352e16))
+        for (lo, hi, x) in far
+            b = PeriodicBSplineBasis(UniformMesh(8, (lo, hi)), 3)
+            @test all(j -> isfinite(D(t -> evaluate(b, j, t), x)), eachindex(b))
         end
     end
 

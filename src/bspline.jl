@@ -992,21 +992,63 @@ end
 # `L` -- ForwardDiff returns NaN there -- and that NaN reaches every basis function at the
 # knot `a` and its periodic images. The identity on [a,a+L) is also the fast path: a point
 # of a particle loop is usually inside already, and two comparisons cost less than `fld`.
-# It returns `x - zero(L)`, the same value in the type of the other returns, so that an
-# `Int` or a `Float32` point on a `Float64` basis infers one type.
+# The point is `x - zero(L)` from the start, the same value in the type of the other
+# results, so that an `Int` or a `Float32` point on a `Float64` basis infers one type.
 #
-# Within a few ulps of a seam, rounding can leave `x - L * fld(x - a, L)` just below `a` or
-# at `a + L`. The two lines after it bring it back onto [a,a+L): outside it `evaluate` and
-# `findcell` pick different spans, and the `p`-th derivatives of `evaluate` and
-# `evaluate_all` then disagree by the jump at the seam.
+# The subtraction is one `fma`: far from the domain `L * fld(x - a, L)` need not be a float,
+# and a rounded product can lose the whole remainder (11184813 * 3 rounds to 33554440 in
+# Float32). Rounding of `x - a` can still leave the result just below `a` or at `a + L`, and
+# the lines after it bring it back onto [a,a+L): outside it `evaluate` and `findcell` pick
+# different spans, and the `p`-th derivatives of `evaluate` and `evaluate_all` then disagree
+# by the jump at the seam. A shift by `L` can itself round onto the float `a + L` (on 0.1 ..
+# 1.1 at x = -0.9). Rounding is monotone, so a point that a shift back by `L` takes below `a`
+# is exactly that float, and `prevfloat` moves it inside while it keeps the partials of a
+# dual number.
+#
+# Where `|x - a| / L` exceeds about `1 / eps`, the quotient `fld(x - a, L)` is itself rounded
+# and misses by whole periods, so one pass leaves the point outside. Each pass shrinks the
+# distance by about a factor `eps`, and the loop repeats it until the point is inside. Where
+# `|x - a| / L` exceeds `floatmax`, the quotient overflows (in Float16 from about 4e4 at
+# L = 0.6), and the pass steps by `P = L * 2^k` instead, an exact multiple of `L`, with `k`
+# grown by half the exponent range until the quotient is finite. The quotient then stays
+# above about `sqrt(floatmax)`, so each pass makes progress, also for a subnormal `L`. This
+# loop takes the quotient with `div`, not `fld`: the float `fld(d, P)` forms `d - mod(d, P)`,
+# which overflows near `-floatmax` (`fld(-floatmax, 2.3e306)` is `-Inf`, not -78), while
+# `div` forms `d - rem(d, P)`, which cannot exceed `|d|`; the guards and the next pass take
+# up the sign of the remainder. A NaN point stays NaN, and an infinite one becomes NaN, as
+# with `mod`.
+#
+# The loop is in its own function, which a point reaches only when one pass leaves it
+# outside, so that the fast path and the one pass stay small enough to inline.
 _reduce_argument(::BSplineBasis, x) = x
 function _reduce_argument(b::PeriodicBSplineBasis, x)
     a = leftendpoint(domain(b))
     L = domainlength(b)
-    a ≤ x < a + L && return x - zero(L)
-    x̃ = x - L * fld(x - a, L)
-    x̃ < a && return x̃ + L
-    x̃ ≥ a + L && return x̃ - L
+    x̃ = x - zero(L)
+    a ≤ x̃ < a + L && return x̃
+    r = _reduce_pass(fld, a, L, L, x̃)
+    a ≤ r < a + L && return r
+    return _reduce_far(a, L, x̃)
+end
+
+# One pass: subtract the whole steps `P`, a multiple of `L`, by the quotient `quot`, then
+# correct a seam rounding.
+function _reduce_pass(quot, a, L, P, x̃)
+    x̃ = fma(-P, quot(x̃ - a, P), x̃)
+    x̃ < a && (x̃ += L)
+    x̃ < a + L && return x̃
+    y = x̃ - L
+    return y < a ? prevfloat(x̃) : y
+end
+
+@noinline function _reduce_far(a, L, x̃)
+    while !(a ≤ x̃ < a + L || isnan(x̃))
+        P = L
+        while isinf(div(x̃ - a, P))
+            P = ldexp(P, exponent(floatmax(P)) ÷ 2)
+        end
+        x̃ = _reduce_pass(div, a, L, P, x̃)
+    end
     return x̃
 end
 

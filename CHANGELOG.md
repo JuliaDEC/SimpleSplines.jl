@@ -26,17 +26,22 @@ A periodic basis gave `NaN` derivatives to a `ForwardDiff.Dual` argument at the 
 K6). `evaluate`, `evaluate_all` and `Spline` evaluation reduced the argument as
 `a + mod(x - a, L)`, and ForwardDiff's derivative of `mod` is `NaN` where `x - a` is a multiple
 of `L`, so every basis function lost its derivative there; the values were right. The reduction
-is now the identity on `[a, a + L)`, and elsewhere subtracts a whole number of periods,
-`x - L * fld(x - a, L)`, and then moves a result that rounds to just below `a` or to `a + L`
-back onto `[a, a + L)`. It has derivative one everywhere. Outside `[a, a + L)` the reduced
-argument can differ from the old one by rounding, by at most `1.1e-13` over `10^6` points with
-`|x|` up to about 630 on a domain of length `2π`, for six values of `a`; within a few ulps of a
-seam the two can also land on opposite sides of it, a whole period apart. The old reduction
-could return `a + L` there, and the `p`-th derivatives of `evaluate` and `evaluate_all` then
-disagreed by the jump at the seam; the new one stays in `[a, a + L)`, and the two agree.
-`evaluate_all!` on a 64-cell uniform basis, at degrees 1 and 3, takes 20–26 % less time per
-point for points inside `[a, a + L)`, and about 16 % more for points of which seven in eight
-lie outside it.
+is now the identity on `[a, a + L)`, and elsewhere subtracts a whole number of periods in one
+rounding, `fma(-L, fld(x - a, L), x)`, and then moves a result that rounds to just below `a` or
+to `a + L` back onto `[a, a + L)`. Where `|x - a| / L` exceeds about `1 / eps`, the quotient
+is itself rounded, and the pass repeats until the point is inside; where it exceeds
+`floatmax`, also on a domain of subnormal length, a pass steps by a multiple `L * 2^k` with a
+finite quotient instead. It has derivative one everywhere. Outside
+`[a, a + L)` the reduced argument can differ from the old one by rounding, by at most
+`4.6e-14` over `10^6` points with `|x|` up to about 630 on a domain of length `2π`, for each
+of six values of `a`; within a few ulps of a seam the two can also land on opposite sides of
+it, a whole period apart. The old reduction could return `a + L` there, and the `p`-th
+derivatives of `evaluate` and `evaluate_all` then disagreed by the jump at the seam; the new
+one stays in `[a, a + L)`, also where a shift by `L` rounds onto `a + L`, and the two agree.
+`NaN` and `±Inf` still reduce to `NaN`. `evaluate_all!` on a 64-cell uniform basis, at
+degrees 1 and 3, takes 28–32 % less time per point for points inside `[a, a + L)`, and
+18–24 % more for points of which seven in eight lie outside it, in two rounds against the
+base. `scripts/periodic_reduction.jl` measures both.
 
 ## [0.4.0] — 2026-11-02
 
