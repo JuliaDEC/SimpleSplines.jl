@@ -15,21 +15,6 @@
 
 ## This package
 
-### K2 · `evaluate` on a degree-0 periodic basis counts two functions just below `b`
-
-- **location:** `src/bspline.jl:616`
-- **evidence:** `evaluate` sums the images `x̃ - L`, `x̃` and `x̃ + L`, and `x̃ - L` can round
-  onto `a`, so the first basis function is counted beside the last one.
-  `B = PeriodicBSplineBasis(UniformMesh(14, -2.210389847221002 .. -1.67460502203573), 0)`
-  gives `sum(B[prevfloat(b), :]) == 2.0`, nonzero at `j = 1` and `j = 14`, while
-  `evaluate_all(B, prevfloat(b))` gives `(14, [1.0])`. Over 690 random degree-0 spans, 40
-  `Float64` and 19 `Float32` bases fail this way at `prevfloat(b)`. Degree 1 and higher are
-  continuous across the seam, so the same rounding there moves a value by rounding only. Setting
-  the knot `y₁ + L` to `b` does not fix it: the shifted argument `a + L` then lands below that
-  knot, and 35 of the `Float32` bases count two functions at `a` instead.
-- **kind:** defect
-- **found:** 2026-10-31
-
 ### K5 · `SplineQuadrature` refuses a `Float32` periodic basis on a narrow uniform mesh far from zero
 
 - **location:** `src/mass.jl`, the circulant check that raises `_not_circulant`
@@ -46,20 +31,6 @@
   `Float32` spans throw on #39 and no `Float64` span does.
 - **kind:** defect
 - **found:** 2026-10-31; older than #39
-
-### K6 · A periodic basis gives `NaN` derivatives to a `ForwardDiff.Dual` at `a` and at `b`
-
-- **location:** `src/bspline.jl`, `_reduce_argument(b::PeriodicBSplineBasis, x)`
-- **evidence:** the argument is reduced as `a + mod(x - a, L)`, and ForwardDiff's `mod` gives a
-  `NaN` partial where `x - a` is a multiple of `L`: `mod(Dual{Nothing}(1.0, 1.0), 1.0)` is
-  `Dual{Nothing}(0.0,NaN)`. With `b = BSplineBasis(UniformMesh(8, 0.0 .. 1.0), 3, Periodic())`
-  and `û = collect(1.0:8)` on `cb82e6f`, `evaluate(b, û, Dual{Nothing}(1.0, 1.0))` and
-  `evaluate(b, û, Dual{Nothing}(0.0, 1.0))` both give `Dual{Nothing}(6.999999999999999,NaN)`,
-  while `Dual{Nothing}(prevfloat(1.0), 1.0)` gives `Dual{Nothing}(7.0,8.000000000000014)`.
-  `evaluate_all(b, Dual{Nothing}(1.0, 1.0))` gives `NaN` partials in all four entries. The values
-  are right; only the derivatives are lost.
-- **kind:** defect
-- **found:** 2026-11-02
 
 ### K7 · `l2_projection!` into a `Float32` array fails on a `Float64` periodic quadrature
 
@@ -83,6 +54,23 @@
   type, as on `cb82e6f`, and refuses the same tuples.
 - **kind:** found late
 - **found:** 2026-11-02
+
+### K10 · `evaluate_all` on a domain of subnormal length returns `Inf`
+
+- **location:** `src/bspline.jl:878`
+- **evidence:** with `b = PeriodicBSplineBasis(UniformMesh(8, (0.0f0, 1.0f-39)), 3)`,
+  `evaluate_all(b, 3.7f-40)` gives `Float32[Inf, Inf, Inf, Inf]`, while `evaluate(b, j, 3.7f-40)`
+  for the same four functions gives `[1.07f-5, 0.187, 0.665, 0.147]`, which sum to one. The
+  `Float64` domain `(0.0, 1e-309)` at `3.7e-310` does the same, on `72a3e17` and on the branch
+  that removes K6 alike. The de Boor step at `src/bspline.jl:932`,
+  `temp = values[r] / (right + left)`, divides by a knot span of a few subnormal cell widths,
+  whose reciprocal already overflows, so `temp` and every value become `Inf`. Forming the
+  ratios `right / s` and `left / s` where the cell of `x` is subnormal gives the values of
+  `evaluate`, but in its cheapest form tried, a test of the cell width once per call, it makes
+  `evaluate_all!` about 5 % slower at degree 3 and for points outside the domain at degree 1
+  (`scripts/periodic_reduction.jl`, two rounds against `72a3e17`), so the fix stays open.
+- **kind:** defect
+- **found:** 2026-11-20; older than `72a3e17`
 
 ### K11 · A `Float16` `UniformMesh` refuses ordinary domains, because its closed form overflows
 

@@ -77,9 +77,7 @@ larger(B) = ndims(B) == 2 ? basis_2d(eltype(B), 9) : basis_3d(eltype(B), 5)
         @test evaluate!(buf, b, û, T(0.37)) == evaluate(b, û, T(0.37))
         @test evaluate!(buf, s, T(0.37)) == s(T(0.37))
 
-        # A Dual argument with a Dual buffer. `isequal` rather than `==`: a periodic basis at
-        # the ends of its domain gives NaN partials on both sides (K6 of KNOWN_ISSUES.md), and
-        # `==` is false for them.
+        # A Dual argument with a Dual buffer.
         bufd = zeros(Dual12, local_width(b))
         for x in (0.37, 0.5, 1.0, 1.75), d in 0:1
 
